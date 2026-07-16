@@ -1,0 +1,30 @@
+---
+description: Strict Clean Architecture laws for Expense Tracking
+alwaysApply: true
+---
+
+# Architecture law
+
+If unsure where code goes: add a CashFlowKit use case + port, implement the port in CashFlowData, and call it from a Feature ViewModel. Never put money math or networking in a SwiftUI View.
+
+## Modules
+
+- `Packages/CashFlowKit` — pure domain (Foundation only)
+- `Packages/CashFlowData` — SwiftData, URLSession, Keychain, Demo, SimpleFIN, Sync
+- `ExpenseTracking` — SwiftUI features + `DependencyContainer` (only concrete wiring site)
+
+## SOLID applies to every file
+
+Do not add multi-purpose types, bypass ports with concretes in Features, or widen protocols “for convenience.”
+
+## Money
+
+Use `Decimal` only. Never `Double`/`Float` for amounts in domain, data, or UI models (chart plotting may convert at the view edge only).
+
+## Transactions list
+
+Keyset pagination (page size 50). Predicate-scoped filters (account, date, category). Preformatted `TransactionRowModel` strings. No full-table fetch.
+
+## Verification before done
+
+Run package tests and `scripts/check_architecture.sh`. Prefer XcodeBuildMCP `test_sim` / `build_sim` when touching the app target.

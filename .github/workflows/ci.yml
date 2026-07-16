@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  architecture:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Architecture boundaries
+        run: scripts/check_architecture.sh
+
+  package-tests:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: CashFlowKit tests
+        run: cd Packages/CashFlowKit && swift test
+      - name: CashFlowData tests
+        run: cd Packages/CashFlowData && swift test
+
+  ios-tests:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: iOS tests
+        run: |
+          set -o pipefail
+          DEVICE_ID=$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/{print $2; exit}')
+          xcodebuild test \
+            -scheme ExpenseTracking \
+            -destination "platform=iOS Simulator,id=${DEVICE_ID}" \
+            CODE_SIGNING_ALLOWED=NO

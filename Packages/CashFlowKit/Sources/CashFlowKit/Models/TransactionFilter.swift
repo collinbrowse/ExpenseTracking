@@ -1,0 +1,50 @@
+import Foundation
+
+public struct TransactionFilter: Hashable, Sendable {
+    public var accountID: AccountID?
+    public var dateRange: CashFlowDateRange?
+    public var categoryID: CategoryID?
+
+    public init(
+        accountID: AccountID? = nil,
+        dateRange: CashFlowDateRange? = nil,
+        categoryID: CategoryID? = nil
+    ) {
+        self.accountID = accountID
+        self.dateRange = dateRange
+        self.categoryID = categoryID
+    }
+
+    public static let all = TransactionFilter()
+}
+
+public struct TransactionCursor: Hashable, Sendable {
+    public let postedDate: Date
+    public let id: TransactionID
+
+    public init(postedDate: Date, id: TransactionID) {
+        self.postedDate = postedDate
+        self.id = id
+    }
+
+    public init(transaction: Transaction) {
+        self.postedDate = transaction.postedDate
+        self.id = transaction.id
+    }
+}
+
+public struct TransactionPage: Sendable {
+    public let items: [Transaction]
+    public let nextCursor: TransactionCursor?
+
+    public init(items: [Transaction], nextCursor: TransactionCursor?) {
+        self.items = items
+        self.nextCursor = nextCursor
+    }
+
+    public var hasMore: Bool { nextCursor != nil }
+}
+
+public enum TransactionPageSize {
+    public static let `default` = 50
+}

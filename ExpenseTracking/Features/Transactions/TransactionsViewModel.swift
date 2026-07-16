@@ -1,0 +1,187 @@
+import Foundation
+import Observation
+import CashFlowKit
+import CashFlowData
+
+@MainActor
+@Observable
+final class TransactionsViewModel {
+    private let transactionRepository: any TransactionRepository
+    private let accountRepository: any AccountRepository
+    private let syncServing: any SyncServing
+
+    var rows: [TransactionRowModel] = []
+    var accounts: [Account] = []
+    var searchText = ""
+    var filterAccountID: AccountID?
+    var filterCategoryID: CategoryID?
+    var filterDateOption: TransactionDateFilterOption = .all
+    var customStart: Date = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
+    var customEnd: Date = .now
+    var showFilters = false
+    var showCustomRange = false
+    var isLoadingPage = false
+    var hasMore = true
+    var bannerMessage: String?
+    var selectedTransactionID: TransactionID?
+    var editingDescription = ""
+    var editingCategoryID: CategoryID = SystemCategory.other.id
+    var editingAccountName = ""
+
+    private var cursor: TransactionCursor?
+    private var loadTask: Task<Void, Never>?
+    private var accountNames: [AccountID: String] = [:]
+
+    init(
+        transactionRepository: any TransactionRepository,
+        accountRepository: any AccountRepository,
+        syncServing: any SyncServing
+    ) {
+        self.transactionRepository = transactionRepository
+        self.accountRepository = accountRepository
+        self.syncServing = syncServing
+    }
+
+    var filter: TransactionFilter {
+        TransactionFilter(
+            accountID: filterAccountID,
+            dateRange: filterDateOption.dateRange(
+                customStart: customStart,
+                customEnd: customEnd
+            ),
+            categoryID: filterCategoryID
+        )
+    }
+
+    var displayedRows: [TransactionRowModel] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return rows }
+        return rows.filter { row in
+            row.title.localizedCaseInsensitiveContains(query)
+                || row.categoryText.localizedCaseInsensitiveContains(query)
+                || row.accountName.localizedCaseInsensitiveContains(query)
+                || TransactionAmountSearch.matches(query, amountText: row.amountText)
+        }
+    }
+
+    /// Month sections in descending chronological order (already sorted in `rows`).
+    var sections: [TransactionMonthSection] {
+        var orderedKeys: [String] = []
+        var buckets: [String: [TransactionRowModel]] = [:]
+        var titles: [String: String] = [:]
+
+        for row in displayedRows {
+            if buckets[row.sectionKey] == nil {
+                orderedKeys.append(row.sectionKey)
+                titles[row.sectionKey] = row.sectionTitle
+                buckets[row.sectionKey] = []
+            }
+            buckets[row.sectionKey]?.append(row)
+        }
+
+        return orderedKeys.compactMap { key in
+            guard let rows = buckets[key], let title = titles[key] else { return nil }
+            return TransactionMonthSection(key: key, title: title, rows: rows)
+        }
+    }
+
+    func onAppear() async {
+        await refreshAccounts()
+        await resetAndLoad()
+    }
+
+    func applyFilters() async {
+        showFilters = false
+        await resetAndLoad()
+    }
+
+    func resetAndLoad() async {
+        loadTask?.cancel()
+        rows = []
+        cursor = nil
+        hasMore = true
+        await loadNextPage()
+    }
+
+    func loadNextPageIfNeeded(currentRowID: TransactionID) async {
+        guard hasMore, !isLoadingPage else { return }
+        guard let index = rows.firstIndex(where: { $0.id == currentRowID }) else { return }
+        if index >= rows.count - 10 {
+            await loadNextPage()
+        }
+    }
+
+    func loadNextPage() async {
+        guard hasMore, !isLoadingPage else { return }
+        isLoadingPage = true
+        defer { isLoadingPage = false }
+
+        do {
+            let page = try await transactionRepository.fetchPage(
+                filter: filter,
+                cursor: cursor,
+                limit: TransactionPageSize.default
+            )
+            let mapped = page.items.map { tx in
+                TransactionRowModel(
+                    transaction: tx,
+                    accountName: accountNames[tx.accountID] ?? "Account"
+                )
+            }
+            rows.append(contentsOf: mapped)
+            cursor = page.nextCursor
+            hasMore = page.hasMore
+        } catch {
+            bannerMessage = "Couldn't load transactions."
+        }
+    }
+
+    func refresh() async {
+        do {
+            _ = try await syncServing.syncNow()
+            bannerMessage = nil
+        } catch {
+            bannerMessage = "Couldn't refresh. Showing last saved data."
+        }
+        await refreshAccounts()
+        await resetAndLoad()
+    }
+
+    func openEditor(for id: TransactionID) {
+        selectedTransactionID = id
+        if let row = rows.first(where: { $0.id == id }) {
+            editingDescription = row.title
+            editingCategoryID = row.categoryID
+            editingAccountName = row.accountName
+        }
+    }
+
+    func saveEdits() async {
+        guard let id = selectedTransactionID else { return }
+        do {
+            try await transactionRepository.updateCategory(
+                transactionID: id,
+                categoryID: editingCategoryID
+            )
+            try await transactionRepository.updateDescription(
+                transactionID: id,
+                description: editingDescription
+            )
+            selectedTransactionID = nil
+            await resetAndLoad()
+        } catch {
+            bannerMessage = "Couldn't save changes."
+        }
+    }
+
+    private func refreshAccounts() async {
+        do {
+            accounts = try await accountRepository.fetchAll()
+            accountNames = Dictionary(
+                uniqueKeysWithValues: accounts.map { ($0.id, $0.name) }
+            )
+        } catch {
+            accounts = []
+        }
+    }
+}

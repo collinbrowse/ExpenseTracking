@@ -1,0 +1,14 @@
+.DS_Store
+.swiftpm/
+**/Packages/*/.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcresult
+.idea/
+/tmp/
+*.log
+.env
+.env.*
+*.pem
+secrets/
