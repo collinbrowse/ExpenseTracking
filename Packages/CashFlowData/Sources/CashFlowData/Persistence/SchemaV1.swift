@@ -1,6 +1,12 @@
 import Foundation
 import SwiftData
 
+/// Single versioned schema.
+///
+/// Do not add parallel `VersionedSchema` enums that list the same `@Model` types —
+/// SwiftData checksums the live model shape, so identical stages crash with
+/// `Duplicate version checksums detected`. Additive fields use defaults on the
+/// `@Model` types; incompatible stores are wiped in `ModelContainerFactory`.
 public enum CashFlowSchemaV1: VersionedSchema {
     public static let versionIdentifier = Schema.Version(1, 0, 0)
     public static var models: [any PersistentModel.Type] {
@@ -25,9 +31,12 @@ public final class AccountEntity {
     public var currencyCode: String
     public var balance: Decimal
     public var balanceDate: Date
+    /// When true, sync keeps local `name` and does not apply SimpleFIN's account name.
+    /// Default on the property (not only init) so lightweight migration can fill existing rows.
+    public var userEditedName: Bool = false
 
     @Relationship(deleteRule: .cascade, inverse: \TransactionEntity.account)
-    public var transactions: [TransactionEntity]
+    public var transactions: [TransactionEntity] = []
 
     public init(
         id: String,
@@ -36,7 +45,8 @@ public final class AccountEntity {
         institutionName: String,
         currencyCode: String,
         balance: Decimal,
-        balanceDate: Date
+        balanceDate: Date,
+        userEditedName: Bool = false
     ) {
         self.id = id
         self.externalID = externalID
@@ -45,6 +55,7 @@ public final class AccountEntity {
         self.currencyCode = currencyCode
         self.balance = balance
         self.balanceDate = balanceDate
+        self.userEditedName = userEditedName
         self.transactions = []
     }
 }
@@ -102,19 +113,24 @@ public final class ConnectionEntity {
     public var providerName: String
     public var needsReauth: Bool
     public var lastSuccessfulSyncAt: Date?
-    public var isDemo: Bool
+    public var isDemo: Bool = false
+    /// After one successful full lookback sync, later syncs use the watermark only.
+    /// Default on the property so lightweight migration can fill existing rows.
+    public var historyBackfillComplete: Bool = false
 
     public init(
         id: String = "primary",
         providerName: String,
         needsReauth: Bool = false,
         lastSuccessfulSyncAt: Date? = nil,
-        isDemo: Bool = false
+        isDemo: Bool = false,
+        historyBackfillComplete: Bool = false
     ) {
         self.id = id
         self.providerName = providerName
         self.needsReauth = needsReauth
         self.lastSuccessfulSyncAt = lastSuccessfulSyncAt
         self.isDemo = isDemo
+        self.historyBackfillComplete = historyBackfillComplete
     }
 }

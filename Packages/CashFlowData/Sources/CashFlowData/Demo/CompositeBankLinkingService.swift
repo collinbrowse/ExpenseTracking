@@ -23,10 +23,20 @@ public actor CompositeBankLinkingService: BankLinkingServing {
         self.mode = initialMode
     }
 
-    /// Stable label; active provider is reflected in `connectionStatus()`.
-    public nonisolated let providerName = "Accounts"
+    /// Protocol requirement; prefer `activeProviderName()` / `connectionStatus().providerName` for persistence.
+    public nonisolated var providerName: String { "Accounts" }
+
+    public func activeProviderName() async -> String {
+        await resolveModeIfNeeded()
+        switch mode {
+        case .none: return "None"
+        case .demo: return demo.providerName
+        case .simpleFIN: return simpleFIN.providerName
+        }
+    }
 
     public func connectionStatus() async -> LinkedConnection {
+        await resolveModeIfNeeded()
         switch mode {
         case .none:
             return LinkedConnection(isLinked: false, providerName: "None")
@@ -41,22 +51,28 @@ public actor CompositeBankLinkingService: BankLinkingServing {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
         if lower == "demo" || lower == "demo-large" {
+            // Mutual exclusion: clear SimpleFIN credentials before enabling Demo.
+            try await simpleFIN.unlink(removeLocalData: false)
             try await demo.link(withSetupToken: trimmed)
             mode = .demo
             return
         }
+        // Mutual exclusion: clear Demo session before enabling SimpleFIN.
+        try await demo.unlink(removeLocalData: false)
         try await simpleFIN.link(withSetupToken: trimmed)
         mode = .simpleFIN
     }
 
     public func unlink(removeLocalData: Bool) async throws {
+        await resolveModeIfNeeded()
         switch mode {
         case .demo:
             try await demo.unlink(removeLocalData: removeLocalData)
         case .simpleFIN:
             try await simpleFIN.unlink(removeLocalData: removeLocalData)
         case .none:
-            break
+            try await simpleFIN.unlink(removeLocalData: removeLocalData)
+            try await demo.unlink(removeLocalData: removeLocalData)
         }
         mode = .none
     }
@@ -65,6 +81,7 @@ public actor CompositeBankLinkingService: BankLinkingServing {
         startDate: Date?,
         endDate: Date?
     ) async throws -> RemoteSyncPayload {
+        await resolveModeIfNeeded()
         switch mode {
         case .none:
             throw CashFlowError.notLinked
@@ -77,5 +94,25 @@ public actor CompositeBankLinkingService: BankLinkingServing {
 
     public func setMode(_ mode: Mode) {
         self.mode = mode
+    }
+
+    /// Restores an in-memory Demo session from durable `ConnectionEntity` after process launch.
+    public func adoptDurableDemoLink() async {
+        await demo.adoptLinkedState(true)
+        mode = .demo
+    }
+
+    /// After process launch, `mode` is `.none` even if SimpleFIN credentials remain in Keychain.
+    private func resolveModeIfNeeded() async {
+        guard mode == .none else { return }
+        let simpleStatus = await simpleFIN.connectionStatus()
+        if simpleStatus.isLinked {
+            mode = .simpleFIN
+            return
+        }
+        let demoStatus = await demo.connectionStatus()
+        if demoStatus.isLinked {
+            mode = .demo
+        }
     }
 }

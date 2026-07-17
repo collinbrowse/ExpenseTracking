@@ -7,7 +7,6 @@ public actor SimpleFINBankLinkingService: BankLinkingServing {
     private let client: SimpleFINClient
     private let accessURLStore: any AccessURLStoring
     private var needsReauth = false
-    private var lastSuccessfulSyncAt: Date?
 
     public init(
         client: SimpleFINClient = SimpleFINClient(),
@@ -23,7 +22,7 @@ public actor SimpleFINBankLinkingService: BankLinkingServing {
             isLinked: linked,
             providerName: providerName,
             needsReauth: needsReauth,
-            lastSuccessfulSyncAt: lastSuccessfulSyncAt
+            lastSuccessfulSyncAt: nil
         )
     }
 
@@ -38,7 +37,6 @@ public actor SimpleFINBankLinkingService: BankLinkingServing {
         _ = removeLocalData
         try accessURLStore.delete()
         needsReauth = false
-        lastSuccessfulSyncAt = nil
     }
 
     public func fetchAccounts(
@@ -54,16 +52,12 @@ public actor SimpleFINBankLinkingService: BankLinkingServing {
                 startDate: startDate,
                 endDate: endDate
             )
-            lastSuccessfulSyncAt = .now
+            // Watermark / lastSuccessfulSyncAt are owned by SyncCoordinator + ConnectionEntity.
             needsReauth = false
             return payload
         } catch CashFlowError.unauthorized {
             needsReauth = true
             throw CashFlowError.unauthorized
         }
-    }
-
-    public func markSynced(at date: Date = .now) {
-        lastSuccessfulSyncAt = date
     }
 }

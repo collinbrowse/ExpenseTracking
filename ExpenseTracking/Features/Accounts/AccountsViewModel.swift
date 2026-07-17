@@ -2,38 +2,45 @@ import Foundation
 import Observation
 import UIKit
 import CashFlowKit
-import CashFlowData
 
 @MainActor
 @Observable
 final class AccountsViewModel {
-    private let bankLinking: CompositeBankLinkingService
-    private let syncServing: SyncCoordinator
+    private let connectionLifecycle: any ConnectionLifecycleServing
+    private let syncServing: any SyncServing
     private let accountRepository: any AccountRepository
-    private let resetter: LocalDataResetter
     private let useLargeDemoSeed: Bool
 
     var accounts: [Account] = []
     var connection: LinkedConnection = .init(isLinked: false, providerName: "None")
     var setupToken = ""
     var showLinkSheet = false
+    var pendingLinkAfterOnboarding = false
     var isWorking = false
-    var message: String?
+    var workingTitle: String?
+    var statusBanner: String?
+    var errorAlert: AccountsErrorAlert?
     var showOnboarding: Bool
-    /// Bumped after any successful sync/demo load so Home/Transactions reload.
     var storeEpoch: Int = 0
+    var renamingAccountID: AccountID?
+    var renamingName = ""
+
+    private var operationID = UUID()
+    private var statusBannerDismissTask: Task<Void, Never>?
+
+    var hasOrphanLocalData: Bool {
+        !connection.isLinked && !accounts.isEmpty
+    }
 
     init(
-        bankLinking: CompositeBankLinkingService,
-        syncServing: SyncCoordinator,
+        connectionLifecycle: any ConnectionLifecycleServing,
+        syncServing: any SyncServing,
         accountRepository: any AccountRepository,
-        resetter: LocalDataResetter,
         useLargeDemoSeed: Bool
     ) {
-        self.bankLinking = bankLinking
+        self.connectionLifecycle = connectionLifecycle
         self.syncServing = syncServing
         self.accountRepository = accountRepository
-        self.resetter = resetter
         self.useLargeDemoSeed = useLargeDemoSeed
         self.showOnboarding = !UserDefaults.standard.bool(forKey: "didCompleteOnboarding")
     }
@@ -48,82 +55,207 @@ final class AccountsViewModel {
     }
 
     func loadDemo() async {
-        isWorking = true
-        defer { isWorking = false }
+        let op = beginWorking("Loading demo data…")
+        defer { endWorking(op) }
         do {
             let token = useLargeDemoSeed ? "demo-large" : "demo"
-            try await bankLinking.link(withSetupToken: token)
-            _ = try await syncServing.syncNow()
+            connection = try await connectionLifecycle.replaceAndLink(withSetupToken: token)
+            guard isCurrent(op) else { return }
             completeOnboarding()
-            message = "Demo data loaded."
+            presentStatus("Demo data loaded.")
             await refreshStatus()
             storeEpoch += 1
         } catch {
-            message = "Couldn't load demo data."
+            presentError(
+                title: "Couldn't load demo data",
+                message: userFacingMessage(for: error, fallback: "Something went wrong while loading demo data."),
+                operation: op
+            )
         }
     }
 
+    func beginLinkFlow() {
+        clearStatusBanner()
+        errorAlert = nil
+        showLinkSheet = true
+    }
+
+    func beginLinkFlowFromOnboarding() {
+        clearStatusBanner()
+        errorAlert = nil
+        pendingLinkAfterOnboarding = true
+        showOnboarding = false
+    }
+
+    func presentPendingLinkIfNeeded() {
+        guard pendingLinkAfterOnboarding else { return }
+        pendingLinkAfterOnboarding = false
+        showLinkSheet = true
+    }
+
     func linkSimpleFIN() async {
-        isWorking = true
-        defer { isWorking = false }
+        let op = beginWorking("Linking SimpleFIN…")
+        defer { endWorking(op) }
         do {
-            try await bankLinking.link(withSetupToken: setupToken)
-            _ = try await syncServing.syncNow()
+            workingTitle = "Linking SimpleFIN…"
+            connection = try await connectionLifecycle.replaceAndLink(withSetupToken: setupToken)
+            guard isCurrent(op) else { return }
             setupToken = ""
             showLinkSheet = false
             completeOnboarding()
-            message = "Account linked."
+            presentStatus(
+                banner(afterSync: connection, successFallback: "Account linked."),
+                dismissAfter: statusDismissDelay(for: connection)
+            )
             await refreshStatus()
             storeEpoch += 1
         } catch CashFlowError.unauthorized {
-            message = "Token may be compromised or already used. Create a new SimpleFIN token."
+            guard isCurrent(op) else { return }
+            await refreshStatus()
+            let needsReauth = connection.needsReauth
+            presentError(
+                title: "Couldn't link SimpleFIN",
+                message: needsReauth || connection.isLinked
+                    ? "That setup token was already used or access was revoked. Create a new SimpleFIN token to reconnect."
+                    : "Token may be compromised or already used. Create a new SimpleFIN token.",
+                operation: op,
+                primaryAction: .reconnect
+            )
         } catch {
-            message = "Couldn't link SimpleFIN."
+            guard isCurrent(op) else { return }
+            await refreshStatus()
+            // Claim may have succeeded inside replaceAndLink before sync failed.
+            if connection.isLinked {
+                setupToken = ""
+                showLinkSheet = false
+                completeOnboarding()
+                storeEpoch += 1
+                presentError(
+                    title: "Linked, but sync failed",
+                    message: userFacingMessage(
+                        for: error,
+                        fallback: "Your token was claimed. Tap Sync Now to retry."
+                    ),
+                    operation: op,
+                    primaryAction: .syncNow
+                )
+            } else {
+                presentError(
+                    title: "Couldn't link SimpleFIN",
+                    message: userFacingMessage(for: error, fallback: "Check your token and try again."),
+                    operation: op
+                )
+            }
         }
     }
 
     func syncNow() async {
-        isWorking = true
-        defer { isWorking = false }
+        let op = beginWorking("Syncing…")
+        defer { endWorking(op) }
         do {
             connection = try await syncServing.syncNow()
-            message = "Synced."
+            guard isCurrent(op) else { return }
+            presentStatus(
+                banner(afterSync: connection, successFallback: "Synced."),
+                dismissAfter: statusDismissDelay(for: connection)
+            )
             await refreshStatus()
             storeEpoch += 1
         } catch CashFlowError.unauthorized {
-            message = "Reconnect required."
+            guard isCurrent(op) else { return }
             await refreshStatus()
+            presentError(
+                title: "Reconnect required",
+                message: "Your SimpleFIN connection expired. Link again with a new token.",
+                operation: op,
+                primaryAction: .reconnect
+            )
         } catch {
-            message = "Couldn't sync."
+            guard isCurrent(op) else { return }
+            presentError(
+                title: "Couldn't sync",
+                message: userFacingMessage(for: error, fallback: "Try again in a moment."),
+                operation: op
+            )
         }
     }
 
     func disconnect(removeLocalData: Bool) async {
-        isWorking = true
-        defer { isWorking = false }
+        let op = beginWorking(removeLocalData ? "Disconnecting and deleting…" : "Disconnecting…")
+        defer { endWorking(op) }
         do {
-            try await bankLinking.unlink(removeLocalData: removeLocalData)
-            if removeLocalData {
-                try await resetter.resetAll()
-            }
-            message = "Disconnected."
+            connection = try await connectionLifecycle.disconnect(deleteLocalData: removeLocalData)
+            guard isCurrent(op) else { return }
+            presentStatus(
+                removeLocalData ? "Disconnected and local data deleted." : "Disconnected."
+            )
             await refreshStatus()
             storeEpoch += 1
         } catch {
-            message = "Couldn't disconnect."
+            guard isCurrent(op) else { return }
+            presentError(
+                title: "Couldn't disconnect",
+                message: userFacingMessage(for: error, fallback: "Try again in a moment."),
+                operation: op
+            )
+            await refreshStatus()
         }
     }
 
-    func resetLocalData() async {
-        isWorking = true
-        defer { isWorking = false }
+    func resetLocalDataKeepingLink() async {
+        let op = beginWorking("Clearing local data…")
+        defer { endWorking(op) }
         do {
-            try await resetter.resetAll()
-            message = "Local data reset."
+            connection = try await connectionLifecycle.resetLocalDataKeepingLink()
+            guard isCurrent(op) else { return }
+            presentStatus(
+                connection.isLinked
+                    ? "Local data cleared. Tap Sync Now to re-download."
+                    : "Local data cleared.",
+                dismissAfter: 4
+            )
             await refreshStatus()
             storeEpoch += 1
         } catch {
-            message = "Couldn't reset local data."
+            guard isCurrent(op) else { return }
+            presentError(
+                title: "Couldn't clear local data",
+                message: userFacingMessage(for: error, fallback: "Try again in a moment."),
+                operation: op
+            )
+            await refreshStatus()
+        }
+    }
+
+    func eraseEverything() async {
+        let op = beginWorking("Erasing everything…")
+        defer { endWorking(op) }
+        do {
+            try await connectionLifecycle.eraseEverything()
+            guard isCurrent(op) else { return }
+            presentStatus("All local data erased.")
+            await refreshStatus()
+            storeEpoch += 1
+        } catch {
+            guard isCurrent(op) else { return }
+            presentError(
+                title: "Couldn't erase data",
+                message: userFacingMessage(for: error, fallback: "Try again in a moment."),
+                operation: op
+            )
+            await refreshStatus()
+        }
+    }
+
+    func performErrorAction(_ action: AccountsErrorAction) {
+        dismissErrorAlert()
+        switch action {
+        case .reconnect:
+            beginLinkFlow()
+        case .syncNow:
+            Task { await syncNow() }
+        case .dismissOnly:
+            break
         }
     }
 
@@ -135,12 +267,147 @@ final class AccountsViewModel {
         }
     }
 
-    private func completeOnboarding() {
-        showOnboarding = false
-        UserDefaults.standard.set(true, forKey: "didCompleteOnboarding")
+    func dismissErrorAlert() {
+        errorAlert = nil
     }
 
     func dismissOnboarding() {
         completeOnboarding()
     }
+
+    func beginRename(_ account: Account) {
+        renamingAccountID = account.id
+        renamingName = account.name
+    }
+
+    func cancelRename() {
+        renamingAccountID = nil
+        renamingName = ""
+    }
+
+    func saveRename() async {
+        guard let id = renamingAccountID else { return }
+        do {
+            try await accountRepository.updateName(accountID: id, name: renamingName)
+            renamingAccountID = nil
+            renamingName = ""
+            await refreshStatus()
+            storeEpoch += 1
+        } catch {
+            errorAlert = AccountsErrorAlert(
+                title: "Couldn't rename account",
+                message: userFacingMessage(for: error, fallback: "Try a different name."),
+                primaryAction: .dismissOnly
+            )
+        }
+    }
+
+    @discardableResult
+    private func beginWorking(_ title: String) -> UUID {
+        let id = UUID()
+        operationID = id
+        isWorking = true
+        workingTitle = title
+        errorAlert = nil
+        return id
+    }
+
+    private func endWorking(_ operation: UUID) {
+        guard operationID == operation else { return }
+        isWorking = false
+        workingTitle = nil
+    }
+
+    private func isCurrent(_ operation: UUID) -> Bool {
+        operationID == operation
+    }
+
+    private func presentError(
+        title: String,
+        message: String,
+        operation: UUID,
+        primaryAction: AccountsErrorAction = .dismissOnly
+    ) {
+        guard operationID == operation else { return }
+        errorAlert = AccountsErrorAlert(
+            title: title,
+            message: message,
+            primaryAction: primaryAction
+        )
+        clearStatusBanner()
+    }
+
+    func presentStatus(_ message: String, dismissAfter seconds: TimeInterval = 2.4) {
+        statusBannerDismissTask?.cancel()
+        statusBanner = message
+        statusBannerDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            if statusBanner == message {
+                statusBanner = nil
+            }
+        }
+    }
+
+    func clearStatusBanner() {
+        statusBannerDismissTask?.cancel()
+        statusBannerDismissTask = nil
+        statusBanner = nil
+    }
+
+    private func userFacingMessage(for error: Error, fallback: String) -> String {
+        if let cashFlowError = error as? CashFlowError {
+            switch cashFlowError {
+            case .unauthorized:
+                return "Authorization failed. Create a new SimpleFIN token and try again."
+            case .paymentRequired:
+                return "SimpleFIN requires an active subscription."
+            case .transport(let message):
+                return message.isEmpty ? fallback : message
+            case .decoding(let message):
+                return message.isEmpty ? fallback : "Couldn't read the server response. \(message)"
+            case .persistence(let message):
+                return message.isEmpty ? fallback : message
+            case .providerMessages(let messages):
+                let joined = messages.joined(separator: " ")
+                return joined.isEmpty ? fallback : joined
+            case .notLinked:
+                return "No account is linked."
+            case .cancelled:
+                return "Cancelled."
+            }
+        }
+        let description = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return description.isEmpty ? fallback : description
+    }
+
+    private func completeOnboarding() {
+        showOnboarding = false
+        UserDefaults.standard.set(true, forKey: "didCompleteOnboarding")
+    }
+
+    private func banner(afterSync connection: LinkedConnection, successFallback: String) -> String {
+        let messages = connection.providerMessages
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if messages.isEmpty { return successFallback }
+        return messages.joined(separator: " ")
+    }
+
+    private func statusDismissDelay(for connection: LinkedConnection) -> TimeInterval {
+        connection.providerMessages.isEmpty ? 2.4 : 4.5
+    }
+}
+
+enum AccountsErrorAction: Equatable {
+    case dismissOnly
+    case reconnect
+    case syncNow
+}
+
+struct AccountsErrorAlert: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let message: String
+    let primaryAction: AccountsErrorAction
 }

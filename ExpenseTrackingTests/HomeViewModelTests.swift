@@ -41,6 +41,56 @@ struct HomeViewModelTests {
         await vm.reload()
         #expect(vm.result.net == 900)
         #expect(vm.hasData)
+        #expect(!vm.availableRangeOptions.contains(.lastYear))
+    }
+
+    @Test("Year appears only when local history reaches back a full year")
+    func yearRequiresFullYearHistory() async {
+        let now = Date()
+        let recentRepo = MockTransactionRepository(
+            transactions: [
+                Transaction(
+                    id: TransactionID("1"),
+                    accountID: AccountID("a"),
+                    externalID: "1",
+                    amount: -10,
+                    postedDate: Calendar.current.date(byAdding: .day, value: -40, to: now) ?? now,
+                    description: "Recent",
+                    categoryID: SystemCategory.dining.id
+                ),
+            ]
+        )
+        let recentVM = HomeViewModel(
+            transactionRepository: recentRepo,
+            syncServing: MockSyncServing(),
+            calculateNetCashFlow: CalculateNetCashFlowUseCase(),
+            connectivity: ConnectivityMonitor()
+        )
+        await recentVM.reload()
+        #expect(!recentVM.availableRangeOptions.contains(.lastYear))
+
+        let yearAgo = Calendar.current.date(byAdding: .year, value: -1, to: now) ?? now
+        let deepRepo = MockTransactionRepository(
+            transactions: [
+                Transaction(
+                    id: TransactionID("1"),
+                    accountID: AccountID("a"),
+                    externalID: "1",
+                    amount: -10,
+                    postedDate: yearAgo,
+                    description: "Old",
+                    categoryID: SystemCategory.dining.id
+                ),
+            ]
+        )
+        let deepVM = HomeViewModel(
+            transactionRepository: deepRepo,
+            syncServing: MockSyncServing(),
+            calculateNetCashFlow: CalculateNetCashFlowUseCase(),
+            connectivity: ConnectivityMonitor()
+        )
+        await deepVM.reload()
+        #expect(deepVM.availableRangeOptions.contains(.lastYear))
     }
 }
 
@@ -57,6 +107,10 @@ private struct MockTransactionRepository: TransactionRepository {
 
     func fetchPosted(in range: CashFlowDateRange, now: Date) async throws -> [Transaction] {
         transactions
+    }
+
+    func earliestPostedDate() async throws -> Date? {
+        transactions.map(\.postedDate).min()
     }
 
     func updateCategory(transactionID: TransactionID, categoryID: CategoryID) async throws {}

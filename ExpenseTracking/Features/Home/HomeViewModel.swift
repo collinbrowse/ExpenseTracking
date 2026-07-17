@@ -35,6 +35,9 @@ final class HomeViewModel {
     var hasData = false
     /// Bumped when chart-worthy data lands so the chart can replay its entrance animation.
     var chartAnimationToken = 0
+    /// Oldest posted transaction; gates whether Year appears in the range picker.
+    var earliestPostedDate: Date?
+    var availableRangeOptions: [HomeRangeOption] = HomeRangeOption.pickerOptions(earliestPosted: nil)
 
     init(
         transactionRepository: any TransactionRepository,
@@ -64,6 +67,7 @@ final class HomeViewModel {
     }
 
     func selectOption(_ option: HomeRangeOption) async {
+        guard availableRangeOptions.contains(option) else { return }
         if option == .custom {
             showCustomRange = true
             return
@@ -88,6 +92,12 @@ final class HomeViewModel {
         defer { isLoading = false }
 
         do {
+            earliestPostedDate = try await transactionRepository.earliestPostedDate()
+            availableRangeOptions = HomeRangeOption.pickerOptions(earliestPosted: earliestPostedDate)
+            if !availableRangeOptions.contains(selectedOption) {
+                selectedOption = .month
+            }
+
             let transactions = try await transactionRepository.fetchPosted(
                 in: selectedRange,
                 now: .now
