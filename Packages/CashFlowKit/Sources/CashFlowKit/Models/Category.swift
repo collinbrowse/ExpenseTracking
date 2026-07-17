@@ -43,6 +43,12 @@ public enum SystemCategory: String, Sendable, CaseIterable {
     case shopping
     case bills
     case entertainment
+    case rentMortgage
+    case travelVacation
+    case healthFitness
+    case businessServices
+    case feesCharges
+    case medical
     case other
 
     public var id: CategoryID { CategoryID(rawValue) }
@@ -54,11 +60,17 @@ public enum SystemCategory: String, Sendable, CaseIterable {
         case .transfer: "Transfer"
         case .creditCardPayment: "Credit Card Payment"
         case .groceries: "Groceries"
-        case .dining: "Dining"
-        case .transport: "Transport"
+        case .dining: "Food & Dining"
+        case .transport: "Auto & Transport"
         case .shopping: "Shopping"
-        case .bills: "Bills"
+        case .bills: "Bills & Utilities"
         case .entertainment: "Entertainment"
+        case .rentMortgage: "Rent & Mortgage"
+        case .travelVacation: "Travel & Vacation"
+        case .healthFitness: "Health & Fitness"
+        case .businessServices: "Business Services"
+        case .feesCharges: "Fees & Charges"
+        case .medical: "Medical"
         case .other: "Other"
         }
     }
@@ -67,7 +79,9 @@ public enum SystemCategory: String, Sendable, CaseIterable {
         switch self {
         case .income: .income
         case .hidden, .transfer, .creditCardPayment: .excluded
-        case .groceries, .dining, .transport, .shopping, .bills, .entertainment, .other:
+        case .groceries, .dining, .transport, .shopping, .bills, .entertainment,
+             .rentMortgage, .travelVacation, .healthFitness, .businessServices,
+             .feesCharges, .medical, .other:
             .expense
         }
     }
@@ -76,8 +90,11 @@ public enum SystemCategory: String, Sendable, CaseIterable {
         Category(id: id, name: name, kind: kind)
     }
 
+    /// Categories sorted A→Z by display name (for pickers).
     public static var allCategories: [Category] {
-        allCases.map(\.category)
+        allCases.map(\.category).sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
     }
 
     public static func category(for id: CategoryID) -> Category {

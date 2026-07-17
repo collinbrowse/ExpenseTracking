@@ -28,7 +28,7 @@ struct HomeView: View {
                         Task { await viewModel.selectOption(newValue) }
                     }
                 )) {
-                    ForEach(HomeRangeOption.allCases) { option in
+                    ForEach(viewModel.availableRangeOptions) { option in
                         Text(option.title).tag(option)
                     }
                 }

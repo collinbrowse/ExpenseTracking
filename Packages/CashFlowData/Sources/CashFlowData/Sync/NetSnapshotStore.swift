@@ -46,6 +46,12 @@ public struct NetSnapshotStore: Sendable {
         return try JSONDecoder().decode(NetCashFlowSnapshot.self, from: data)
     }
 
+    public func clear() throws {
+        let url = try resolvedFileURL(createDirectories: false)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.removeItem(at: url)
+    }
+
     private func resolvedFileURL(createDirectories: Bool) throws -> URL {
         if let groupURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)

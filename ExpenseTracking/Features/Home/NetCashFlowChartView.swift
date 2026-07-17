@@ -20,8 +20,12 @@ struct NetCashFlowChartView: View {
         accentPositive ? Theme.positive : Color.primary
     }
 
+    private var isRevealComplete: Bool {
+        revealProgress >= 0.999
+    }
+
     private var selectedPoint: DailyCashFlowPoint? {
-        guard revealProgress >= 1, let rawSelectedDate else { return nil }
+        guard isRevealComplete, let rawSelectedDate else { return nil }
         return nearestPoint(to: rawSelectedDate)
     }
 
@@ -37,84 +41,90 @@ struct NetCashFlowChartView: View {
     }
 
     var body: some View {
-        Chart {
-            ForEach(points) { point in
-                AreaMark(
-                    x: .value("Day", point.day, unit: .day),
-                    y: .value("Net", doubleValue(point.net))
-                )
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [accent.opacity(0.35), .clear],
-                        startPoint: .top,
-                        endPoint: .bottom
+        VStack(spacing: 8) {
+            // Callout lives outside the chart so the plot reveal mask cannot clip it.
+            ZStack {
+                if let selectedPoint {
+                    selectionCallout(for: selectedPoint)
+                        .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .accessibilityHidden(true)
+
+            Chart {
+                ForEach(points) { point in
+                    AreaMark(
+                        x: .value("Day", point.day, unit: .day),
+                        y: .value("Net", doubleValue(point.net))
                     )
-                )
-                .interpolationMethod(.linear)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [accent.opacity(0.35), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .interpolationMethod(.linear)
 
-                LineMark(
-                    x: .value("Day", point.day, unit: .day),
-                    y: .value("Net", doubleValue(point.net))
-                )
-                .foregroundStyle(accent)
-                .interpolationMethod(.linear)
-                .lineStyle(StrokeStyle(lineWidth: 2))
-            }
-
-            if let selectedPoint {
-                RuleMark(x: .value("Selected", selectedPoint.day, unit: .day))
-                    .foregroundStyle(Color.secondary.opacity(0.45))
-                    .lineStyle(StrokeStyle(lineWidth: 1))
-                    .zIndex(-1)
-                    .annotation(
-                        position: .top,
-                        spacing: 0,
-                        overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
-                    ) {
-                        selectionCallout(for: selectedPoint)
-                    }
-
-                PointMark(
-                    x: .value("Selected", selectedPoint.day, unit: .day),
-                    y: .value("Net", doubleValue(selectedPoint.net))
-                )
-                .symbol {
-                    Circle()
-                        .strokeBorder(.background, lineWidth: 2)
-                        .background(Circle().fill(accent))
-                        .frame(width: 10, height: 10)
+                    LineMark(
+                        x: .value("Day", point.day, unit: .day),
+                        y: .value("Net", doubleValue(point.net))
+                    )
+                    .foregroundStyle(accent)
+                    .interpolationMethod(.linear)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
                 }
-            }
-        }
-        .chartYScale(domain: yDomain)
-        .chartXSelection(value: $rawSelectedDate)
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                AxisGridLine()
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let number = value.as(Double.self) {
-                        Text(CurrencyFormatting.signedUSD(Decimal(number)))
-                            .font(.caption2)
+
+                if let selectedPoint {
+                    RuleMark(x: .value("Selected", selectedPoint.day, unit: .day))
+                        .foregroundStyle(Color.secondary.opacity(0.45))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                        .zIndex(-1)
+
+                    PointMark(
+                        x: .value("Selected", selectedPoint.day, unit: .day),
+                        y: .value("Net", doubleValue(selectedPoint.net))
+                    )
+                    .symbol {
+                        Circle()
+                            .strokeBorder(.background, lineWidth: 2)
+                            .background(Circle().fill(accent))
+                            .frame(width: 10, height: 10)
                     }
                 }
             }
-        }
-        .chartPlotStyle { plotArea in
-            plotArea.mask {
-                GeometryReader { geometry in
-                    Rectangle()
-                        .frame(width: max(geometry.size.width * revealProgress, 0))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .chartYScale(domain: yDomain)
+            .chartXSelection(value: $rawSelectedDate)
+            .chartXAxis {
+                AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                    AxisGridLine()
+                    AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                 }
             }
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine()
+                    AxisValueLabel {
+                        if let number = value.as(Double.self) {
+                            Text(CurrencyFormatting.signedUSD(Decimal(number)))
+                                .font(.caption2)
+                        }
+                    }
+                }
+            }
+            .chartPlotStyle { plotArea in
+                plotArea.mask {
+                    GeometryReader { geometry in
+                        Rectangle()
+                            .frame(width: max(geometry.size.width * revealProgress, 0))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(height: 200)
         }
-        .frame(height: 200)
         .accessibilityIdentifier("home.chart")
         .accessibilityLabel(
             "Cumulative net cash flow over \(rangeTitle), ending at \(CurrencyFormatting.signedUSD(endNet)). Press and drag to inspect values."

@@ -27,4 +27,31 @@ enum HomeRangeOption: String, CaseIterable, Identifiable {
             .custom(min(customStart, customEnd)...max(customStart, customEnd))
         }
     }
+
+    /// Year is only offered when local history reaches back a full year (banks often return less).
+    static func pickerOptions(
+        earliestPosted: Date?,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> [HomeRangeOption] {
+        var options: [HomeRangeOption] = [.month, .last30Days]
+        if supportsLastYear(earliestPosted: earliestPosted, now: now, calendar: calendar) {
+            options.append(.lastYear)
+        }
+        options.append(.custom)
+        return options
+    }
+
+    static func supportsLastYear(
+        earliestPosted: Date?,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard let earliestPosted,
+              let yearAgo = calendar.date(byAdding: .year, value: -1, to: now)
+        else {
+            return false
+        }
+        return earliestPosted <= yearAgo
+    }
 }

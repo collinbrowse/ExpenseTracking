@@ -7,7 +7,7 @@ Snapshot of what this repo actually ships today. Keep this file honest when feat
 ### Home
 
 - Hero **net cash flow** for the selected range, plus **In** / **Out**
-- Range picker: Month · 30 Days · Year · Custom (date-picker sheet)
+- Range picker: Month · 30 Days · Year · Custom (date-picker sheet). **Year appears only when local history reaches back a full year** (banks often return less than the requested lookback)
 - Cumulative net **line chart** (axes first; line reveals left→right on first load)
 - Press-and-drag scrubbing with callout; Reduce Motion respected
 - Pull-to-refresh sync; offline / error banners
@@ -28,22 +28,36 @@ Code: `ExpenseTracking/Features/Transactions/`
 
 ### Accounts & onboarding
 
-- Connection status and last successful sync
-- Load Demo / Link SimpleFIN (Bridge token → Access URL in Keychain)
-- Sync Now; disconnect (keep data or wipe); reset local data
-- Account list with balances
+- Connection status and last successful sync (durable via `ConnectionEntity`)
+- Load Demo / Link SimpleFIN through `ConnectionLifecycleServing` (**mutually exclusive**; link always wipes local accounts first)
+- Sync Now; disconnect (keep data or wipe); clear local data (keep link); **Erase everything**
+- Orphan leftover-data recovery when Not linked but rows remain
+- Account list with balance on the trailing edge; tap opens Transactions filtered to that account
+- Local account rename (survives sync while the SimpleFIN account still matches); new accounts take the SimpleFIN name
 - First-launch onboarding: Demo · Link · Skip
 - Settings (gear from Accounts): About + local-data privacy note
+
+**Semantics**
+| Action | Credentials | Local accounts/txns |
+|--------|-------------|---------------------|
+| Link / Load Demo (`replaceAndLink`) | Switch to new provider | Wiped, then re-synced |
+| Disconnect (keep data) | Cleared | Kept |
+| Disconnect & delete | Cleared | Wiped |
+| Clear local data (keep link) | Kept | Wiped (Sync Now re-pulls) |
+| Erase everything | Cleared | Wiped |
 
 Code: `ExpenseTracking/Features/Accounts/`, `Features/Settings/`
 
 ### Sync & data
 
-- `SyncCoordinator` — single-flight; failures keep last good local data
-- Initial lookback ~2 years; later syncs use last-success watermark − 2 days
-- Merge policy: user-edited **category** wins locally; remote wins amount / date / description
-- Demo provider for fixtures / portfolio; SimpleFIN for real institutions
-- Widget snapshot written after successful sync (`NetSnapshotStore`)
+- `SyncCoordinator` — single-flight; cancel waits for slot; failures keep last good local data
+- `connectionStatus` assembles Keychain/Demo + `ConnectionEntity` (`needsReauth`, last sync)
+- Initial / incomplete history: ~2-year lookback (chunked ≤90 days for SimpleFIN) until `historyBackfillComplete`; later syncs use watermark − 2 days
+- Merge policy: user-edited **category** and **account name** win locally; remote wins amount / date / description / balance / institution
+- Category suggestion: local keyword/phrase rules (`SuggestTransactionCategoryUseCase`); unmatched credits → Other (not Income)
+- Demo provider for fixtures / portfolio; SimpleFIN for real institutions — **not coexisting in one store**
+- Widget snapshot written after successful sync; cleared on full wipe (`NetSnapshotStore`)
+- Launch: single `VersionedSchema`; store load failures wipe App Group/local stores and retry, then in-memory — **no `fatalError` on SwiftData migration**
 
 Code: `Packages/CashFlowData/`
 
@@ -66,6 +80,7 @@ Code: `ExpenseTrackingWidget/`
 
 | Topic | Behavior today |
 |-------|----------------|
+| Bank history depth | SimpleFIN/Bridge only returns what the institution exposes; lookback requests older windows but empty older ranges are common |
 | Transaction search | Client-side over **loaded pages only**, not a full-store query |
 | Edited description | Saved locally, but **re-sync can overwrite description** from remote (category edits are protected) |
 | Home date fetch | Posted txs for the range; date scoping may finish in memory when SwiftData predicates are fragile |
@@ -80,6 +95,16 @@ Code: `ExpenseTrackingWidget/`
 - Delete transaction API (forbidden for MVP)
 - Face ID / lock screen app lock
 - Budgets, multi-currency, analytics, marketing screenshot pack
+
+### Categorization roadmap (when ready — not started)
+
+Today: static keyword/phrase rules in `SuggestTransactionCategoryUseCase` (CashFlowKit), applied at SimpleFIN ingest; user edits stick via `userEditedCategory`.
+
+**Phase 1 — User rules (do this first)**  
+Let the user define persistent local rules, e.g. “description contains *X*” or “exact description *Y*” → always category *Z*. Store in SwiftData; apply **before** (or instead of) the built-in suggester on sync/ingest. UI: create/edit/delete from transaction edit or a small Rules screen. No networking.
+
+**Phase 2 — On-device ML (experiment later)**  
+After Phase 1: explore on-device models (Create ML / Core ML) trained on the user’s corrections + rules, still fully on-device. Treat as a learning spike; keep rules + keyword fallback as the safety net. Do not block shipping on this.
 
 ## Demo happy path (manual)
 

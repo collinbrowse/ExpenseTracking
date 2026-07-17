@@ -28,7 +28,13 @@ enum SyncMergeEngine {
         descriptor.fetchLimit = 1
 
         if let existing = try context.fetch(descriptor).first {
-            existing.name = remote.name
+            let resolved = MergeAccountSyncPolicy.resolvedName(
+                localName: existing.name,
+                localUserEditedName: existing.userEditedName,
+                remoteName: remote.name
+            )
+            existing.name = resolved.name
+            existing.userEditedName = resolved.userEditedName
             existing.institutionName = remote.institutionName
             existing.currencyCode = remote.currencyCode
             existing.balance = remote.balance
@@ -43,7 +49,8 @@ enum SyncMergeEngine {
             institutionName: remote.institutionName,
             currencyCode: remote.currencyCode,
             balance: remote.balance,
-            balanceDate: remote.balanceDate
+            balanceDate: remote.balanceDate,
+            userEditedName: false
         )
         context.insert(entity)
         return entity

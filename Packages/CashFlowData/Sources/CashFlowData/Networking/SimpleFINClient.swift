@@ -2,6 +2,9 @@ import Foundation
 import CashFlowKit
 
 public struct SimpleFINClient: Sendable {
+    /// Bridge hard-caps `/accounts` at 90 days per request (≤45 is recommended; advisories are filtered).
+    public static let maxAccountsRangeDays = 90
+
     private let http: any HTTPClient
 
     public init(http: any HTTPClient = URLSessionHTTPClient()) {
@@ -11,16 +14,17 @@ public struct SimpleFINClient: Sendable {
     /// Claims a setup token (base64-encoded claim URL) and returns the Access URL string.
     public func claimAccessURL(setupToken: String) async throws -> String {
         let trimmed = setupToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let decoded = Data(base64Encoded: trimmed),
-              let claimURLString = String(data: decoded, encoding: .utf8),
-              let claimURL = URL(string: claimURLString),
-              claimURL.scheme?.lowercased() == "https"
-        else {
+        guard let claimURL = try? decodeClaimURL(from: trimmed) else {
             throw CashFlowError.decoding(message: "Invalid SimpleFIN setup token")
         }
 
         var request = URLRequest(url: claimURL)
         request.httpMethod = "POST"
+        // Bridge examples require an explicit empty body + Content-Length: 0.
+        request.httpBody = Data()
+        request.setValue("0", forHTTPHeaderField: "Content-Length")
+        request.setValue("text/plain", forHTTPHeaderField: "Accept")
+
         let (data, response) = try await http.data(for: request)
 
         switch response.statusCode {
@@ -37,7 +41,13 @@ public struct SimpleFINClient: Sendable {
         case 402:
             throw CashFlowError.paymentRequired
         default:
-            throw CashFlowError.transport(message: "Claim failed (\(response.statusCode))")
+            throw CashFlowError.transport(
+                message: httpErrorMessage(
+                    action: "Claiming setup token",
+                    statusCode: response.statusCode,
+                    body: data
+                )
+            )
         }
     }
 
@@ -47,7 +57,7 @@ public struct SimpleFINClient: Sendable {
         var request = URLRequest(url: infoURL)
         try applyBasicAuth(from: accessURL, to: &request)
         let (data, response) = try await http.data(for: request)
-        try throwForStatus(response.statusCode)
+        try throwForStatus(response.statusCode, action: "Checking connection", body: data)
         let dto = try JSONDecoder().decode(SimpleFINInfoDTO.self, from: data)
         return dto.versions
     }
@@ -57,25 +67,45 @@ public struct SimpleFINClient: Sendable {
         startDate: Date?,
         endDate: Date?
     ) async throws -> RemoteSyncPayload {
+        let resolvedEnd = endDate ?? .now
+        let resolvedStart = startDate
+            ?? Calendar.current.date(byAdding: .day, value: -Self.maxAccountsRangeDays, to: resolvedEnd)
+            ?? resolvedEnd
+
+        let windows = Self.dateWindows(
+            from: resolvedStart,
+            to: resolvedEnd,
+            maxDays: Self.maxAccountsRangeDays
+        )
+
+        var payloads: [RemoteSyncPayload] = []
+        payloads.reserveCapacity(windows.count)
+        for window in windows {
+            let payload = try await fetchAccountsWindow(
+                accessURL: accessURL,
+                startDate: window.lowerBound,
+                endDate: window.upperBound
+            )
+            payloads.append(payload)
+        }
+        return Self.mergePayloads(payloads)
+    }
+
+    private func fetchAccountsWindow(
+        accessURL: String,
+        startDate: Date,
+        endDate: Date
+    ) async throws -> RemoteSyncPayload {
         let root = try rootURL(from: accessURL)
         var components = URLComponents(
             url: root.appending(path: "accounts"),
             resolvingAgainstBaseURL: false
         )
-        var items: [URLQueryItem] = []
-        if let startDate {
-            items.append(URLQueryItem(
-                name: "start-date",
-                value: String(Int(startDate.timeIntervalSince1970))
-            ))
-        }
-        if let endDate {
-            items.append(URLQueryItem(
-                name: "end-date",
-                value: String(Int(endDate.timeIntervalSince1970))
-            ))
-        }
-        components?.queryItems = items.isEmpty ? nil : items
+        components?.queryItems = [
+            URLQueryItem(name: "start-date", value: String(Int(startDate.timeIntervalSince1970))),
+            URLQueryItem(name: "end-date", value: String(Int(endDate.timeIntervalSince1970))),
+            URLQueryItem(name: "version", value: "2"),
+        ]
         guard let url = components?.url else {
             throw CashFlowError.transport(message: "Invalid accounts URL")
         }
@@ -83,27 +113,138 @@ public struct SimpleFINClient: Sendable {
         var request = URLRequest(url: url)
         try applyBasicAuth(from: accessURL, to: &request)
         let (data, response) = try await http.data(for: request)
-        try throwForStatus(response.statusCode)
+        try throwForStatus(response.statusCode, action: "Syncing accounts", body: data)
 
         let dto = try JSONDecoder().decode(SimpleFINAccountSetDTO.self, from: data)
-        let messages = (dto.errors ?? []).map(sanitize)
-        let accounts = dto.accounts.map(mapAccount)
+        let messages = dto.displayMessages.map(sanitize)
+        let connectionsByID = Dictionary(
+            uniqueKeysWithValues: (dto.connections ?? []).map { ($0.connID, $0) }
+        )
+        let accounts = dto.accounts.map { mapAccount($0, connectionsByID: connectionsByID) }
         return RemoteSyncPayload(accounts: accounts, providerMessages: messages)
     }
 
-    private func mapAccount(_ dto: SimpleFINAccountDTO) -> RemoteAccountSnapshot {
-        let institution = dto.org?.name ?? dto.org?.domain ?? "Institution"
+    /// Splits `[start, end]` into inclusive windows of at most `maxDays` days.
+    static func dateWindows(
+        from start: Date,
+        to end: Date,
+        maxDays: Int,
+        calendar: Calendar = .current
+    ) -> [ClosedRange<Date>] {
+        precondition(maxDays > 0)
+        if end <= start {
+            return [start...start]
+        }
+
+        var windows: [ClosedRange<Date>] = []
+        var cursor = start
+        while cursor < end {
+            let rawEnd = calendar.date(byAdding: .day, value: maxDays, to: cursor) ?? end
+            let windowEnd = min(rawEnd, end)
+            windows.append(cursor...windowEnd)
+            if windowEnd >= end { break }
+            cursor = windowEnd
+        }
+        return windows
+    }
+
+    static func mergePayloads(_ payloads: [RemoteSyncPayload]) -> RemoteSyncPayload {
+        guard !payloads.isEmpty else {
+            return RemoteSyncPayload(accounts: [], providerMessages: [])
+        }
+
+        var accountsByID: [String: RemoteAccountSnapshot] = [:]
+        var messages: [String] = []
+
+        for payload in payloads {
+            messages.append(contentsOf: payload.providerMessages)
+            for account in payload.accounts {
+                if let existing = accountsByID[account.externalID] {
+                    accountsByID[account.externalID] = mergeAccounts(existing, account)
+                } else {
+                    accountsByID[account.externalID] = account
+                }
+            }
+        }
+
+        return RemoteSyncPayload(
+            accounts: Array(accountsByID.values).sorted { $0.externalID < $1.externalID },
+            providerMessages: normalizeProviderMessages(messages)
+        )
+    }
+
+    /// Drop Bridge date-window advisories (we already chunk) and dedupe the rest.
+    static func normalizeProviderMessages(_ messages: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for message in messages {
+            let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !isBenignDateRangeAdvisory(trimmed) else { continue }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { continue }
+            result.append(trimmed)
+        }
+        return result
+    }
+
+    static func isBenignDateRangeAdvisory(_ message: String) -> Bool {
+        let lower = message.lowercased()
+        return lower.contains("date range exceeds")
+            || lower.contains("recommended range")
+            || (lower.contains("was capped") && lower.contains("day"))
+    }
+
+    private static func mergeAccounts(
+        _ lhs: RemoteAccountSnapshot,
+        _ rhs: RemoteAccountSnapshot
+    ) -> RemoteAccountSnapshot {
+        var transactionsByID: [String: RemoteTransactionSnapshot] = [:]
+        for transaction in lhs.transactions {
+            transactionsByID[transaction.externalID] = transaction
+        }
+        for transaction in rhs.transactions {
+            transactionsByID[transaction.externalID] = transaction
+        }
+
+        let preferRHS = rhs.balanceDate >= lhs.balanceDate
+        let primary = preferRHS ? rhs : lhs
+        let institutionName = Self.preferredInstitutionName(lhs.institutionName, rhs.institutionName)
+        return RemoteAccountSnapshot(
+            externalID: primary.externalID,
+            name: primary.name,
+            institutionName: institutionName,
+            currencyCode: primary.currencyCode,
+            balance: primary.balance,
+            balanceDate: primary.balanceDate,
+            transactions: Array(transactionsByID.values)
+        )
+    }
+
+    private func mapAccount(
+        _ dto: SimpleFINAccountDTO,
+        connectionsByID: [String: SimpleFINConnectionDTO]
+    ) -> RemoteAccountSnapshot {
+        let connection = dto.connID.flatMap { connectionsByID[$0] }
+        let institution = Self.institutionName(
+            account: dto,
+            connection: connection
+        )
         let balance = Decimal(string: dto.balance) ?? 0
         let txs = (dto.transactions ?? []).compactMap { tx -> RemoteTransactionSnapshot? in
             let posted = tx.posted
             let pending = tx.pending ?? (posted == 0)
             guard let amount = Decimal(string: tx.amount) else { return nil }
-            let category = Self.suggestCategory(description: tx.description, amount: amount)
+            let sanitizedDescription = sanitize(tx.description)
+            let parsed = ParseTransactionDescriptionUseCase.execute(sanitizedDescription)
+            let category = SuggestTransactionCategoryUseCase.execute(
+                description: parsed.title,
+                amount: amount
+            )
             return RemoteTransactionSnapshot(
                 externalID: tx.id,
                 amount: amount,
                 postedDate: Date(timeIntervalSince1970: TimeInterval(posted)),
-                description: sanitize(tx.description),
+                description: sanitizedDescription,
                 isPending: pending,
                 suggestedCategoryID: category
             )
@@ -119,32 +260,81 @@ public struct SimpleFINClient: Sendable {
         )
     }
 
-    static func suggestCategory(description: String, amount: Decimal) -> CategoryID {
-        let lower = description.lowercased()
-        if amount > 0 {
-            if lower.contains("payroll") || lower.contains("direct deposit") || lower.contains("salary") {
-                return SystemCategory.income.id
+    /// Resolves a bank/institution display name from v2 `connections` (preferred) or legacy `org`.
+    static func institutionName(
+        account: SimpleFINAccountDTO,
+        connection: SimpleFINConnectionDTO?
+    ) -> String {
+        if let orgName = connection?.orgName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !orgName.isEmpty
+        {
+            return orgName
+        }
+        if let connectionName = connection?.name.trimmingCharacters(in: .whitespacesAndNewlines),
+           !connectionName.isEmpty
+        {
+            // Bridge often uses "American Express - Collin" for the connection nickname.
+            if let dash = connectionName.range(of: " - ") {
+                let institution = String(connectionName[..<dash.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !institution.isEmpty { return institution }
             }
+            return connectionName
         }
-        if lower.contains("transfer") || lower.contains("payment thank you") {
-            return SystemCategory.transfer.id
+        if let connName = account.connName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !connName.isEmpty
+        {
+            if let dash = connName.range(of: " - ") {
+                let institution = String(connName[..<dash.lowerBound])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !institution.isEmpty { return institution }
+            }
+            return connName
         }
-        if lower.contains("credit card payment") || lower.contains("autopay") {
-            return SystemCategory.creditCardPayment.id
+        if let orgName = account.org?.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !orgName.isEmpty
+        {
+            return orgName
         }
-        if lower.contains("grocery") || lower.contains("whole foods") || lower.contains("trader joe") {
-            return SystemCategory.groceries.id
+        if let domain = account.org?.domain?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !domain.isEmpty
+        {
+            return domain
         }
-        if lower.contains("uber") || lower.contains("lyft") || lower.contains("shell") {
-            return SystemCategory.transport.id
+        if let orgURL = connection?.orgURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let host = URL(string: orgURL)?.host,
+           !host.isEmpty
+        {
+            return host.replacingOccurrences(of: "www.", with: "")
         }
-        if lower.contains("netflix") || lower.contains("spotify") {
-            return SystemCategory.entertainment.id
+        return "Unknown institution"
+    }
+
+    private static func preferredInstitutionName(_ lhs: String, _ rhs: String) -> String {
+        let placeholders: Set<String> = ["Institution", "Unknown institution", ""]
+        if placeholders.contains(lhs), !placeholders.contains(rhs) { return rhs }
+        if placeholders.contains(rhs), !placeholders.contains(lhs) { return lhs }
+        return rhs
+    }
+
+    private func decodeClaimURL(from setupToken: String) throws -> URL {
+        let padded = Self.padBase64(setupToken)
+        guard let decoded = Data(base64Encoded: padded, options: .ignoreUnknownCharacters),
+              let claimURLString = String(data: decoded, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              let claimURL = URL(string: claimURLString),
+              claimURL.scheme?.lowercased() == "https"
+        else {
+            throw CashFlowError.decoding(message: "Invalid SimpleFIN setup token")
         }
-        if amount > 0 {
-            return SystemCategory.income.id
-        }
-        return SystemCategory.other.id
+        return claimURL
+    }
+
+    /// `Data(base64Encoded:)` is strict about padding; Bridge tokens sometimes omit `=`.
+    static func padBase64(_ value: String) -> String {
+        let remainder = value.count % 4
+        guard remainder != 0 else { return value }
+        return value + String(repeating: "=", count: 4 - remainder)
     }
 
     private func rootURL(from accessURL: String) throws -> URL {
@@ -171,13 +361,53 @@ public struct SimpleFINClient: Sendable {
         request.setValue("Basic \(encoded)", forHTTPHeaderField: "Authorization")
     }
 
-    private func throwForStatus(_ code: Int) throws {
+    private func throwForStatus(_ code: Int, action: String, body: Data) throws {
         switch code {
         case 200: return
         case 403: throw CashFlowError.unauthorized
         case 402: throw CashFlowError.paymentRequired
-        default: throw CashFlowError.transport(message: "HTTP \(code)")
+        default:
+            if let providerMessages = Self.providerMessages(fromResponseBody: body), !providerMessages.isEmpty {
+                throw CashFlowError.providerMessages(providerMessages)
+            }
+            throw CashFlowError.transport(
+                message: httpErrorMessage(action: action, statusCode: code, body: body)
+            )
         }
+    }
+
+    private func httpErrorMessage(action: String, statusCode: Int, body: Data) -> String {
+        let snippet = String(data: body, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let snippet, !snippet.isEmpty, snippet.count <= 180, !snippet.hasPrefix("<") {
+            return "\(action) failed (HTTP \(statusCode)): \(snippet)"
+        }
+        return "\(action) failed (HTTP \(statusCode))."
+    }
+
+    /// Prefer SimpleFIN `errlist` / `errors` messages over raw JSON dumps.
+    static func providerMessages(fromResponseBody body: Data) -> [String]? {
+        guard let dto = try? JSONDecoder().decode(SimpleFINAccountSetDTO.self, from: body) else {
+            return nil
+        }
+        let messages = dto.displayMessages.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { !$0.isEmpty }
+        guard !messages.isEmpty else { return nil }
+        return messages.map(Self.userFacingProviderMessage)
+    }
+
+    static func userFacingProviderMessage(_ message: String) -> String {
+        let lower = message.lowercased()
+        if lower.contains("no connections available") {
+            return """
+            SimpleFIN has no bank connections yet. In SimpleFIN Bridge, add a Financial Institution \
+            (connect your bank), then come back here and tap Sync Now. You do not need a new setup token.
+            """
+        }
+        return message
+            .replacingOccurrences(of: "<", with: "")
+            .replacingOccurrences(of: ">", with: "")
     }
 
     private func sanitize(_ string: String) -> String {

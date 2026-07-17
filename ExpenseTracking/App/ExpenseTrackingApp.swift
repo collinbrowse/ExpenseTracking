@@ -7,11 +7,8 @@ struct ExpenseTrackingApp: App {
 
     init() {
         let largeSeed = ProcessInfo.processInfo.arguments.contains("-largeDemoSeed")
-        do {
-            container = try DependencyContainer(largeDemoSeed: largeSeed)
-        } catch {
-            fatalError("Failed to create data stack: \(error)")
-        }
+        // Resilient SwiftData bootstrap — never crash launch on store migration.
+        container = DependencyContainer(largeDemoSeed: largeSeed)
     }
 
     var body: some Scene {

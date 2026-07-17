@@ -218,6 +218,49 @@ struct MergeSyncPolicyTests {
     }
 }
 
+@Suite("SystemCategory")
+struct SystemCategoryTests {
+    @Test("allCategories is alphabetical by name")
+    func allCategoriesAlphabetical() {
+        let names = SystemCategory.allCategories.map(\.name)
+        #expect(names == names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending })
+        #expect(names.first == "Auto & Transport")
+        #expect(names.contains("Rent & Mortgage"))
+        #expect(names.contains("Food & Dining"))
+        #expect(names.contains("Health & Fitness"))
+        #expect(names.contains("Travel & Vacation"))
+        #expect(names.contains("Business Services"))
+        #expect(names.contains("Fees & Charges"))
+        #expect(names.contains("Medical"))
+        #expect(names.contains("Bills & Utilities"))
+    }
+}
+
+@Suite("MergeAccountSyncPolicy")
+struct MergeAccountSyncPolicyTests {
+    @Test("User-edited name is kept")
+    func localNameWins() {
+        let resolved = MergeAccountSyncPolicy.resolvedName(
+            localName: "Vacation Fund",
+            localUserEditedName: true,
+            remoteName: "Checking"
+        )
+        #expect(resolved.name == "Vacation Fund")
+        #expect(resolved.userEditedName == true)
+    }
+
+    @Test("Without user edit, remote name wins")
+    func remoteNameWins() {
+        let resolved = MergeAccountSyncPolicy.resolvedName(
+            localName: "Old",
+            localUserEditedName: false,
+            remoteName: "Checking"
+        )
+        #expect(resolved.name == "Checking")
+        #expect(resolved.userEditedName == false)
+    }
+}
+
 @Suite("CashFlowDateRange")
 struct CashFlowDateRangeTests {
     @Test("last30Days spans roughly 30 days")

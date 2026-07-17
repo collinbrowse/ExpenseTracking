@@ -96,6 +96,51 @@ struct SyncMergeEngineTests {
         #expect(tx.userEditedCategory == true)
     }
 
+    @Test("User-edited account name preserved on re-sync")
+    func preserveAccountName() async throws {
+        let container = try ModelContainerFactory.make(inMemory: true)
+        let repo = SwiftDataAccountRepository(modelContainer: container)
+        let context = ModelContext(container)
+
+        let payload = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Checking",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: 100,
+                balanceDate: .now,
+                transactions: []
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: payload, into: context)
+
+        let accounts = try await repo.fetchAll()
+        let id = try #require(accounts.first?.id)
+        try await repo.updateName(accountID: id, name: "Everyday Spending")
+
+        let updatedPayload = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "CHK ****1234",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: 250,
+                balanceDate: .now,
+                transactions: []
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: updatedPayload, into: context)
+
+        let after = try await repo.fetchAll()
+        let account = try #require(after.first)
+        #expect(account.name == "Everyday Spending")
+        #expect(account.balance == 250)
+
+        let entities = try ModelContext(container).fetch(FetchDescriptor<AccountEntity>())
+        #expect(entities.first?.userEditedName == true)
+    }
+
     @Test("Keyset pagination returns stable pages")
     func keysetPagination() async throws {
         let container = try ModelContainerFactory.make(inMemory: true)

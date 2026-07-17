@@ -46,6 +46,11 @@ public actor DemoBankLinkingService: BankLinkingServing {
         isLinked = false
     }
 
+    /// Used when durable `ConnectionEntity.isDemo` restores Demo mode after relaunch.
+    public func adoptLinkedState(_ linked: Bool) {
+        isLinked = linked
+    }
+
     public func fetchAccounts(
         startDate: Date?,
         endDate: Date?

@@ -12,6 +12,9 @@ public protocol TransactionRepository: Sendable {
         now: Date
     ) async throws -> [Transaction]
 
+    /// Oldest non-pending posted date, if any. Used to gate long Home ranges honestly.
+    func earliestPostedDate() async throws -> Date?
+
     func updateCategory(
         transactionID: TransactionID,
         categoryID: CategoryID
@@ -25,4 +28,7 @@ public protocol TransactionRepository: Sendable {
 
 public protocol AccountRepository: Sendable {
     func fetchAll() async throws -> [Account]
+
+    /// Persists a local display name; subsequent syncs keep it while the account still matches.
+    func updateName(accountID: AccountID, name: String) async throws
 }

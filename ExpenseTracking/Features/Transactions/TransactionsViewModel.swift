@@ -3,6 +3,18 @@ import Observation
 import CashFlowKit
 import CashFlowData
 
+struct ActiveFilterChip: Identifiable, Hashable, Sendable {
+    enum Kind: String, Hashable, Sendable {
+        case account
+        case date
+        case category
+    }
+
+    var id: Kind { kind }
+    let kind: Kind
+    let label: String
+}
+
 @MainActor
 @Observable
 final class TransactionsViewModel {
@@ -27,6 +39,7 @@ final class TransactionsViewModel {
     var editingDescription = ""
     var editingCategoryID: CategoryID = SystemCategory.other.id
     var editingAccountName = ""
+    var editingLocation: String?
 
     private var cursor: TransactionCursor?
     private var loadTask: Task<Void, Never>?
@@ -53,11 +66,45 @@ final class TransactionsViewModel {
         )
     }
 
+    var hasActiveFilters: Bool {
+        !activeFilterChips.isEmpty
+    }
+
+    /// Visible summary of non-default filters (account / date / category).
+    var activeFilterChips: [ActiveFilterChip] {
+        var chips: [ActiveFilterChip] = []
+        if let filterAccountID {
+            let name = accountNames[filterAccountID]
+                ?? accounts.first(where: { $0.id == filterAccountID })?.name
+                ?? "Account"
+            chips.append(ActiveFilterChip(kind: .account, label: name))
+        }
+        if filterDateOption != .all {
+            let label: String
+            if filterDateOption == .custom {
+                label = "\(DateFormatting.list(customStart)) – \(DateFormatting.list(customEnd))"
+            } else {
+                label = filterDateOption.title
+            }
+            chips.append(ActiveFilterChip(kind: .date, label: label))
+        }
+        if let filterCategoryID {
+            chips.append(
+                ActiveFilterChip(
+                    kind: .category,
+                    label: SystemCategory.category(for: filterCategoryID).name
+                )
+            )
+        }
+        return chips
+    }
+
     var displayedRows: [TransactionRowModel] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return rows }
         return rows.filter { row in
             row.title.localizedCaseInsensitiveContains(query)
+                || row.location?.localizedCaseInsensitiveContains(query) == true
                 || row.categoryText.localizedCaseInsensitiveContains(query)
                 || row.accountName.localizedCaseInsensitiveContains(query)
                 || TransactionAmountSearch.matches(query, amountText: row.amountText)
@@ -92,6 +139,34 @@ final class TransactionsViewModel {
 
     func applyFilters() async {
         showFilters = false
+        await resetAndLoad()
+    }
+
+    /// Opens the list focused on one account (from Accounts tab).
+    func focusAccount(_ accountID: AccountID) async {
+        filterAccountID = accountID
+        filterCategoryID = nil
+        filterDateOption = .all
+        await refreshAccounts()
+        await resetAndLoad()
+    }
+
+    func clearFilter(_ kind: ActiveFilterChip.Kind) async {
+        switch kind {
+        case .account:
+            filterAccountID = nil
+        case .date:
+            filterDateOption = .all
+        case .category:
+            filterCategoryID = nil
+        }
+        await resetAndLoad()
+    }
+
+    func clearAllFilters() async {
+        filterAccountID = nil
+        filterCategoryID = nil
+        filterDateOption = .all
         await resetAndLoad()
     }
 
@@ -153,22 +228,41 @@ final class TransactionsViewModel {
             editingDescription = row.title
             editingCategoryID = row.categoryID
             editingAccountName = row.accountName
+            editingLocation = row.location
         }
     }
 
     func saveEdits() async {
-        guard let id = selectedTransactionID else { return }
+        guard let id = selectedTransactionID,
+              let index = rows.firstIndex(where: { $0.id == id })
+        else { return }
+        let storedDescription = ParsedTransactionDescription.recombine(
+            title: editingDescription,
+            location: editingLocation
+        )
+        let newCategoryID = editingCategoryID
         do {
             try await transactionRepository.updateCategory(
                 transactionID: id,
-                categoryID: editingCategoryID
+                categoryID: newCategoryID
             )
             try await transactionRepository.updateDescription(
                 transactionID: id,
-                description: editingDescription
+                description: storedDescription
             )
             selectedTransactionID = nil
-            await resetAndLoad()
+            editingLocation = nil
+
+            // Category filter no longer matches — drop just this row.
+            if let filterCategoryID, filterCategoryID != newCategoryID {
+                rows.remove(at: index)
+                return
+            }
+
+            rows[index] = rows[index].replacing(
+                description: storedDescription,
+                categoryID: newCategoryID
+            )
         } catch {
             bannerMessage = "Couldn't save changes."
         }

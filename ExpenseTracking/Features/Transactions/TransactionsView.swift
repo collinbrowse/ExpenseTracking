@@ -13,6 +13,12 @@ struct TransactionsView: View {
                     .listRowSeparator(.hidden)
             }
 
+            if viewModel.hasActiveFilters {
+                activeFiltersRow
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                    .listRowSeparator(.hidden)
+            }
+
             if viewModel.sections.isEmpty && !viewModel.isLoadingPage {
                 ContentUnavailableView(
                     viewModel.searchText.isEmpty ? "No transactions" : "No results",
@@ -72,9 +78,17 @@ struct TransactionsView: View {
                 Button {
                     viewModel.showFilters = true
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease")
+                    Image(
+                        systemName: viewModel.hasActiveFilters
+                            ? "line.3.horizontal.decrease.circle.fill"
+                            : "line.3.horizontal.decrease"
+                    )
                 }
-                .accessibilityLabel("Filters")
+                .accessibilityLabel(
+                    viewModel.hasActiveFilters
+                        ? "Filters, \(viewModel.activeFilterChips.count) active"
+                        : "Filters"
+                )
                 .accessibilityIdentifier("transactions.filters")
             }
         }
@@ -97,6 +111,58 @@ struct TransactionsView: View {
 
     private func accessibilityLabel(for row: TransactionRowModel) -> String {
         "\(row.title), \(row.categoryText), \(row.amountText), \(row.dateText)"
+    }
+
+    private var activeFiltersRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(viewModel.activeFilterChips) { chip in
+                    HStack(spacing: 6) {
+                        Button {
+                            viewModel.showFilters = true
+                        } label: {
+                            Text(chipLabel(for: chip))
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            Task { await viewModel.clearFilter(chip.kind) }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Clear \(chipLabel(for: chip)) filter")
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color(uiColor: .secondarySystemFill), in: Capsule())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("transactions.filterChip.\(chip.kind.rawValue)")
+                }
+
+                if viewModel.activeFilterChips.count > 1 {
+                    Button("Clear all") {
+                        Task { await viewModel.clearAllFilters() }
+                    }
+                    .font(.subheadline)
+                    .accessibilityIdentifier("transactions.filters.clearAll")
+                }
+            }
+        }
+        .accessibilityIdentifier("transactions.activeFilters")
+    }
+
+    private func chipLabel(for chip: ActiveFilterChip) -> String {
+        switch chip.kind {
+        case .account: "Account: \(chip.label)"
+        case .date: "Date: \(chip.label)"
+        case .category: "Category: \(chip.label)"
+        }
     }
 
     private var filtersSheet: some View {
@@ -170,12 +236,21 @@ struct TransactionsView: View {
                 } footer: {
                     // Footer sits outside the inset grouped card; system spacing
                     // matches the title → section gap above.
-                    Text(viewModel.editingAccountName)
-                        .font(.subheadline)
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("transactions.editor.account")
-                        .accessibilityLabel("Account \(viewModel.editingAccountName)")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(viewModel.editingAccountName)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                            .accessibilityIdentifier("transactions.editor.account")
+                            .accessibilityLabel("Account \(viewModel.editingAccountName)")
+                        if let location = viewModel.editingLocation, !location.isEmpty {
+                            Text(location)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .accessibilityIdentifier("transactions.editor.location")
+                                .accessibilityLabel("Location \(location)")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .navigationTitle("Edit Transaction")
@@ -207,7 +282,7 @@ private struct TransactionRowView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.title)
-                    .font(.body.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text(row.categoryText)

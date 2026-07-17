@@ -49,6 +49,16 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
             .map(EntityMappers.transaction(from:))
     }
 
+    public func earliestPostedDate() async throws -> Date? {
+        let context = ModelContext(modelContainer)
+        var descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate { !$0.isPending },
+            sortBy: [SortDescriptor(\.postedDate, order: .forward)]
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first?.postedDate
+    }
+
     public func updateCategory(
         transactionID: TransactionID,
         categoryID: CategoryID
@@ -184,5 +194,23 @@ public actor SwiftDataAccountRepository: AccountRepository {
             sortBy: [SortDescriptor(\.name)]
         )
         return try context.fetch(descriptor).map(EntityMappers.account(from:))
+    }
+
+    public func updateName(accountID: AccountID, name: String) async throws {
+        let context = ModelContext(modelContainer)
+        let id = accountID.rawValue
+        let predicate = #Predicate<AccountEntity> { $0.id == id }
+        var descriptor = FetchDescriptor<AccountEntity>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        guard let entity = try context.fetch(descriptor).first else {
+            throw CashFlowError.persistence(message: "Account not found.")
+        }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw CashFlowError.persistence(message: "Account name can't be empty.")
+        }
+        entity.name = trimmed
+        entity.userEditedName = true
+        try context.save()
     }
 }

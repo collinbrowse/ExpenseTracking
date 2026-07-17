@@ -6,29 +6,59 @@ import CashFlowKit
 
 public actor SyncCoordinator: SyncServing {
     private let modelContainer: ModelContainer
-    private let bankLinking: any BankLinkingServing
-    private let accessURLStore: any AccessURLStoring
+    private let bankLinking: CompositeBankLinkingService
     private let snapshotStore: NetSnapshotStore
     private let logger = Logger(subsystem: "com.expensetracking", category: "sync")
 
     private var inFlight: Task<LinkedConnection, Error>?
-    private var lastSyncStartedAt: Date?
-    private let minimumAutomaticInterval: TimeInterval = 60
 
     public init(
         modelContainer: ModelContainer,
-        bankLinking: any BankLinkingServing,
-        accessURLStore: any AccessURLStoring = KeychainAccessURLStore(),
+        bankLinking: CompositeBankLinkingService,
         snapshotStore: NetSnapshotStore = NetSnapshotStore()
     ) {
         self.modelContainer = modelContainer
         self.bankLinking = bankLinking
-        self.accessURLStore = accessURLStore
         self.snapshotStore = snapshotStore
     }
 
+    /// Assembles UI status from credentials (Keychain / Demo session) + durable `ConnectionEntity`.
     public func connectionStatus() async -> LinkedConnection {
-        await bankLinking.connectionStatus()
+        let context = ModelContext(modelContainer)
+        let entity = try? fetchConnection(context: context)
+
+        // Durable Demo survives process death via ConnectionEntity.isDemo.
+        if entity?.isDemo == true {
+            let simpleLinked = await bankLinking.connectionStatus()
+            // Prefer SimpleFIN credentials if both somehow exist.
+            if simpleLinked.isLinked, simpleLinked.providerName == "SimpleFIN" {
+                return LinkedConnection(
+                    isLinked: true,
+                    providerName: "SimpleFIN",
+                    needsReauth: entity?.needsReauth ?? false,
+                    lastSuccessfulSyncAt: entity?.lastSuccessfulSyncAt
+                )
+            }
+            await bankLinking.adoptDurableDemoLink()
+            return LinkedConnection(
+                isLinked: true,
+                providerName: "Demo",
+                needsReauth: entity?.needsReauth ?? false,
+                lastSuccessfulSyncAt: entity?.lastSuccessfulSyncAt
+            )
+        }
+
+        let credentials = await bankLinking.connectionStatus()
+        guard credentials.isLinked else {
+            return LinkedConnection(isLinked: false, providerName: "None")
+        }
+
+        return LinkedConnection(
+            isLinked: true,
+            providerName: credentials.providerName,
+            needsReauth: entity?.needsReauth ?? credentials.needsReauth,
+            lastSuccessfulSyncAt: entity?.lastSuccessfulSyncAt
+        )
     }
 
     public func syncNow() async throws -> LinkedConnection {
@@ -41,23 +71,25 @@ public actor SyncCoordinator: SyncServing {
         return try await task.value
     }
 
-    public func cancel() {
-        inFlight?.cancel()
-        inFlight = nil
+    /// Cancels the in-flight sync and waits until the slot is free (no overlapping syncNow).
+    public func cancel() async {
+        guard let task = inFlight else { return }
+        task.cancel()
+        _ = await task.result
     }
 
     private func performSync() async throws -> LinkedConnection {
         try Task.checkCancellation()
-        lastSyncStartedAt = .now
 
-        let startDate: Date?
         let context = ModelContext(modelContainer)
-        if let connection = try fetchConnection(context: context),
-           let watermark = connection.lastSuccessfulSyncAt
-        {
-            // Overlap window of 2 days
+        let existing = try fetchConnection(context: context)
+        let needsHistoryBackfill = existing?.historyBackfillComplete != true
+        let startDate: Date?
+        if !needsHistoryBackfill, let watermark = existing?.lastSuccessfulSyncAt {
             startDate = Calendar.current.date(byAdding: .day, value: -2, to: watermark)
         } else {
+            // Full lookback until one successful historical sync completes.
+            // Watermark-only syncs must not run before that or older windows are never requested again.
             startDate = Calendar.current.date(byAdding: .year, value: -2, to: .now)
         }
 
@@ -69,31 +101,35 @@ public actor SyncCoordinator: SyncServing {
             try Task.checkCancellation()
             try SyncMergeEngine.merge(payload: payload, into: context)
 
+            let providerName = await bankLinking.activeProviderName()
             let connection = try upsertConnection(
                 context: context,
-                providerName: bankLinking.providerName,
+                providerName: providerName,
                 needsReauth: false,
-                syncedAt: .now
+                syncedAt: .now,
+                isDemo: providerName == "Demo",
+                historyBackfillComplete: true
             )
             try context.save()
             try writeNetSnapshot(context: context)
 
-            var status = await bankLinking.connectionStatus()
-            status = LinkedConnection(
-                isLinked: status.isLinked,
-                providerName: status.providerName,
+            return LinkedConnection(
+                isLinked: true,
+                providerName: providerName,
                 needsReauth: false,
                 lastSuccessfulSyncAt: connection.lastSuccessfulSyncAt,
                 providerMessages: payload.providerMessages.map(Self.sanitize)
             )
-            return status
         } catch let error as CashFlowError {
             if case .unauthorized = error {
+                let providerName = await bankLinking.activeProviderName()
                 _ = try? upsertConnection(
                     context: context,
-                    providerName: bankLinking.providerName,
+                    providerName: providerName == "None" ? "SimpleFIN" : providerName,
                     needsReauth: true,
-                    syncedAt: nil
+                    syncedAt: nil,
+                    isDemo: false,
+                    historyBackfillComplete: existing?.historyBackfillComplete ?? false
                 )
                 try? context.save()
             }
@@ -140,11 +176,15 @@ public actor SyncCoordinator: SyncServing {
         context: ModelContext,
         providerName: String,
         needsReauth: Bool,
-        syncedAt: Date?
+        syncedAt: Date?,
+        isDemo: Bool,
+        historyBackfillComplete: Bool
     ) throws -> ConnectionEntity {
         if let existing = try fetchConnection(context: context) {
             existing.providerName = providerName
             existing.needsReauth = needsReauth
+            existing.isDemo = isDemo
+            existing.historyBackfillComplete = historyBackfillComplete
             if let syncedAt {
                 existing.lastSuccessfulSyncAt = syncedAt
             }
@@ -154,7 +194,8 @@ public actor SyncCoordinator: SyncServing {
             providerName: providerName,
             needsReauth: needsReauth,
             lastSuccessfulSyncAt: syncedAt,
-            isDemo: providerName == "Demo"
+            isDemo: isDemo,
+            historyBackfillComplete: historyBackfillComplete
         )
         context.insert(entity)
         return entity
