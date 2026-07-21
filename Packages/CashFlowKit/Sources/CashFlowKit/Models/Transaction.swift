@@ -27,6 +27,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let currencyCode: String
     public let userEditedCategory: Bool
     public let isPending: Bool
+    /// When true, user categorization rules never change this transaction’s category.
+    public let categoryLocked: Bool
 
     public init(
         id: TransactionID,
@@ -38,7 +40,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         categoryID: CategoryID,
         currencyCode: String = "USD",
         userEditedCategory: Bool = false,
-        isPending: Bool = false
+        isPending: Bool = false,
+        categoryLocked: Bool = false
     ) {
         self.id = id
         self.accountID = accountID
@@ -50,9 +53,27 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         self.currencyCode = currencyCode
         self.userEditedCategory = userEditedCategory
         self.isPending = isPending
+        self.categoryLocked = categoryLocked
     }
 
     public var category: Category {
         SystemCategory.category(for: categoryID)
+    }
+}
+
+/// Batch category write for rule re-apply (not list pagination).
+public struct CategoryAssignment: Hashable, Sendable {
+    public let transactionID: TransactionID
+    public let categoryID: CategoryID
+    public let userEditedCategory: Bool
+
+    public init(
+        transactionID: TransactionID,
+        categoryID: CategoryID,
+        userEditedCategory: Bool
+    ) {
+        self.transactionID = transactionID
+        self.categoryID = categoryID
+        self.userEditedCategory = userEditedCategory
     }
 }

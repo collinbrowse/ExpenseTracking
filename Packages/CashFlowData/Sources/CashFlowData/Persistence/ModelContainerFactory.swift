@@ -21,7 +21,10 @@ public enum ModelContainerFactory {
     public static func makeResilient(appGroupID: String? = nil) -> ModelContainer {
         let schema = Schema(versionedSchema: CashFlowSchemaV1.self)
 
-        if let appGroupID {
+        // SwiftData traps (not throws) when `groupContainer` is set but the App Group
+        // entitlement is missing — common under `CODE_SIGNING_ALLOWED=NO` / XCTest.
+        // Only attempt the shared store when the container URL is actually resolvable.
+        if let appGroupID, isAppGroupAvailable(appGroupID) {
             if let container = attemptLoad(schema: schema, configuration: appGroupConfiguration(schema: schema, appGroupID: appGroupID)) {
                 return container
             }
@@ -31,6 +34,8 @@ public enum ModelContainerFactory {
                 return container
             }
             logger.error("App Group store still unavailable after wipe; falling back to local Application Support")
+        } else if appGroupID != nil {
+            logger.error("App Group container unavailable; using local Application Support")
         }
 
         if let container = attemptLoad(schema: schema, configuration: localConfiguration(schema: schema)) {
@@ -87,6 +92,11 @@ public enum ModelContainerFactory {
 
     private static func localConfiguration(schema: Schema) -> ModelConfiguration {
         ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+    }
+
+    /// `false` when the process lacks the App Group entitlement (unsigned CI / many test hosts).
+    static func isAppGroupAvailable(_ appGroupID: String) -> Bool {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil
     }
 
     /// Removes SwiftData/SQLite store files from App Group + local Application Support.

@@ -159,7 +159,7 @@ struct CalculateNetCashFlowUseCaseTests {
 
 @Suite("MergeSyncPolicy")
 struct MergeSyncPolicyTests {
-    @Test("Remote wins amount and description; local wins edited category")
+    @Test("Remote wins amount; local wins edited category and description")
     func localCategoryWins() {
         let account = AccountID("a")
         let local = Transaction(
@@ -184,7 +184,7 @@ struct MergeSyncPolicyTests {
         )
         let merged = MergeSyncPolicy.merge(local: local, remote: remote)
         #expect(merged.amount == 20)
-        #expect(merged.description == "new")
+        #expect(merged.description == "old")
         #expect(merged.postedDate == remote.postedDate)
         #expect(merged.categoryID == SystemCategory.dining.id)
         #expect(merged.userEditedCategory == true)

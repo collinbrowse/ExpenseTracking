@@ -26,7 +26,28 @@ enum EntityMappers {
             categoryID: CategoryID(entity.categoryID),
             currencyCode: entity.currencyCode,
             userEditedCategory: entity.userEditedCategory,
-            isPending: entity.isPending
+            isPending: entity.isPending,
+            categoryLocked: entity.categoryLocked
         )
+    }
+
+    static func categorizationRule(from entity: CategorizationRuleEntity) throws -> CategorizationRule {
+        let conditions = try JSONDecoder().decode(
+            [CategorizationCondition].self,
+            from: entity.conditionsData
+        )
+        return CategorizationRule(
+            id: CategorizationRuleID(entity.id),
+            categoryID: CategoryID(entity.categoryID),
+            priority: entity.priority,
+            isEnabled: entity.isEnabled,
+            conditions: conditions,
+            renameTitle: entity.renameTitle,
+            appliesCategory: entity.appliesCategory
+        )
+    }
+
+    static func encodeConditions(_ conditions: [CategorizationCondition]) throws -> Data {
+        try JSONEncoder().encode(conditions)
     }
 }

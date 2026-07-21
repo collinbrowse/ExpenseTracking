@@ -1,5 +1,5 @@
 import Foundation
-import SwiftData
+@preconcurrency import SwiftData
 
 /// Single versioned schema.
 ///
@@ -8,9 +8,15 @@ import SwiftData
 /// `Duplicate version checksums detected`. Additive fields use defaults on the
 /// `@Model` types; incompatible stores are wiped in `ModelContainerFactory`.
 public enum CashFlowSchemaV1: VersionedSchema {
-    public static let versionIdentifier = Schema.Version(1, 0, 0)
+    // Schema.Version is not Sendable; safe as an immutable schema constant.
+    public nonisolated(unsafe) static let versionIdentifier = Schema.Version(1, 0, 0)
     public static var models: [any PersistentModel.Type] {
-        [AccountEntity.self, TransactionEntity.self, ConnectionEntity.self]
+        [
+            AccountEntity.self,
+            TransactionEntity.self,
+            ConnectionEntity.self,
+            CategorizationRuleEntity.self,
+        ]
     }
 }
 
@@ -73,6 +79,8 @@ public final class TransactionEntity {
     public var currencyCode: String
     public var userEditedCategory: Bool
     public var isPending: Bool
+    /// When true, user categorization rules never change this row’s category.
+    public var categoryLocked: Bool = false
     /// Composite uniqueness helper: accountExternalID + transactionExternalID
     @Attribute(.unique) public var syncKey: String
 
@@ -90,7 +98,8 @@ public final class TransactionEntity {
         userEditedCategory: Bool,
         isPending: Bool,
         syncKey: String,
-        account: AccountEntity?
+        account: AccountEntity?,
+        categoryLocked: Bool = false
     ) {
         self.id = id
         self.externalID = externalID
@@ -104,6 +113,7 @@ public final class TransactionEntity {
         self.isPending = isPending
         self.syncKey = syncKey
         self.account = account
+        self.categoryLocked = categoryLocked
     }
 }
 
@@ -132,5 +142,37 @@ public final class ConnectionEntity {
         self.lastSuccessfulSyncAt = lastSuccessfulSyncAt
         self.isDemo = isDemo
         self.historyBackfillComplete = historyBackfillComplete
+    }
+}
+
+@Model
+public final class CategorizationRuleEntity {
+    @Attribute(.unique) public var id: String
+    public var categoryID: String
+    public var priority: Int
+    public var isEnabled: Bool = true
+    /// JSON-encoded `[CategorizationCondition]`.
+    public var conditionsData: Data
+    /// Optional merchant title applied when the rule matches.
+    public var renameTitle: String? = nil
+    /// When false, matching only renames; category is left alone.
+    public var appliesCategory: Bool = true
+
+    public init(
+        id: String,
+        categoryID: String,
+        priority: Int,
+        isEnabled: Bool = true,
+        conditionsData: Data,
+        renameTitle: String? = nil,
+        appliesCategory: Bool = true
+    ) {
+        self.id = id
+        self.categoryID = categoryID
+        self.priority = priority
+        self.isEnabled = isEnabled
+        self.conditionsData = conditionsData
+        self.renameTitle = renameTitle
+        self.appliesCategory = appliesCategory
     }
 }

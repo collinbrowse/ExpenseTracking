@@ -7,15 +7,31 @@ enum SyncMergeEngine {
         payload: RemoteSyncPayload,
         into context: ModelContext
     ) throws {
+        let rules = try loadRules(from: context)
         for remoteAccount in payload.accounts {
             let account = try upsertAccount(remoteAccount, context: context)
             for remoteTx in remoteAccount.transactions {
                 if remoteTx.isPending { continue }
                 if remoteTx.postedDate.timeIntervalSince1970 == 0 { continue }
-                try upsertTransaction(remoteTx, account: account, context: context)
+                try upsertTransaction(
+                    remoteTx,
+                    account: account,
+                    rules: rules,
+                    context: context
+                )
             }
         }
         try context.save()
+    }
+
+    private static func loadRules(from context: ModelContext) throws -> [CategorizationRule] {
+        let descriptor = FetchDescriptor<CategorizationRuleEntity>(
+            sortBy: [
+                SortDescriptor(\.priority, order: .forward),
+                SortDescriptor(\.id, order: .forward),
+            ]
+        )
+        return try context.fetch(descriptor).map { try EntityMappers.categorizationRule(from: $0) }
     }
 
     private static func upsertAccount(
@@ -59,6 +75,7 @@ enum SyncMergeEngine {
     private static func upsertTransaction(
         _ remote: RemoteTransactionSnapshot,
         account: AccountEntity,
+        rules: [CategorizationRule],
         context: ModelContext
     ) throws {
         let syncKey = "\(account.externalID)|\(remote.externalID)"
@@ -76,12 +93,13 @@ enum SyncMergeEngine {
             categoryID: remote.suggestedCategoryID,
             currencyCode: account.currencyCode,
             userEditedCategory: false,
-            isPending: remote.isPending
+            isPending: remote.isPending,
+            categoryLocked: false
         )
 
         if let existing = try context.fetch(descriptor).first {
             let local = EntityMappers.transaction(from: existing)
-            let merged = MergeSyncPolicy.merge(local: local, remote: remoteDomain)
+            let merged = MergeSyncPolicy.merge(local: local, remote: remoteDomain, rules: rules)
             existing.amount = merged.amount
             existing.postedDate = merged.postedDate
             existing.transactionDescription = merged.description
@@ -91,20 +109,23 @@ enum SyncMergeEngine {
             existing.currencyCode = merged.currencyCode
             existing.accountID = account.id
             existing.account = account
+            existing.categoryLocked = merged.categoryLocked
         } else {
+            let merged = MergeSyncPolicy.merge(local: nil, remote: remoteDomain, rules: rules)
             let entity = TransactionEntity(
                 id: UUID().uuidString,
                 externalID: remote.externalID,
                 accountID: account.id,
-                amount: remote.amount,
-                postedDate: remote.postedDate,
-                transactionDescription: remote.description,
-                categoryID: remote.suggestedCategoryID.rawValue,
+                amount: merged.amount,
+                postedDate: merged.postedDate,
+                transactionDescription: merged.description,
+                categoryID: merged.categoryID.rawValue,
                 currencyCode: account.currencyCode,
-                userEditedCategory: false,
+                userEditedCategory: merged.userEditedCategory,
                 isPending: remote.isPending,
                 syncKey: syncKey,
-                account: account
+                account: account,
+                categoryLocked: false
             )
             context.insert(entity)
         }

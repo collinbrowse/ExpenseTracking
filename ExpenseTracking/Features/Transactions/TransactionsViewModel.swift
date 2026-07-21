@@ -21,6 +21,8 @@ final class TransactionsViewModel {
     private let transactionRepository: any TransactionRepository
     private let accountRepository: any AccountRepository
     private let syncServing: any SyncServing
+    private let ruleRepository: any CategorizationRuleRepository
+    private let ruleApplying: any CategorizationRuleApplying
 
     var rows: [TransactionRowModel] = []
     var accounts: [Account] = []
@@ -38,21 +40,31 @@ final class TransactionsViewModel {
     var selectedTransactionID: TransactionID?
     var editingDescription = ""
     var editingCategoryID: CategoryID = SystemCategory.other.id
+    var editingCategoryLocked = false
     var editingAccountName = ""
     var editingLocation: String?
+    var matchingRules: [CategorizationRule] = []
+    var showRuleEditor = false
+    var ruleEditor: CategorizationRuleEditorViewModel?
+    var isSavingEdits = false
 
     private var cursor: TransactionCursor?
     private var loadTask: Task<Void, Never>?
     private var accountNames: [AccountID: String] = [:]
+    private var matchingRulesTask: Task<Void, Never>?
 
     init(
         transactionRepository: any TransactionRepository,
         accountRepository: any AccountRepository,
-        syncServing: any SyncServing
+        syncServing: any SyncServing,
+        ruleRepository: any CategorizationRuleRepository,
+        ruleApplying: any CategorizationRuleApplying
     ) {
         self.transactionRepository = transactionRepository
         self.accountRepository = accountRepository
         self.syncServing = syncServing
+        self.ruleRepository = ruleRepository
+        self.ruleApplying = ruleApplying
     }
 
     var filter: TransactionFilter {
@@ -227,9 +239,112 @@ final class TransactionsViewModel {
         if let row = rows.first(where: { $0.id == id }) {
             editingDescription = row.title
             editingCategoryID = row.categoryID
+            editingCategoryLocked = row.categoryLocked
             editingAccountName = row.accountName
             editingLocation = row.location
         }
+        Task { await refreshMatchingRules() }
+    }
+
+    func presentCreateRule() {
+        ruleEditor = CategorizationRuleEditorViewModel(
+            ruleRepository: ruleRepository,
+            ruleApplying: ruleApplying,
+            accountRepository: accountRepository,
+            prefillTitle: editingDescription,
+            prefillCategoryID: editingCategoryID
+        )
+        showRuleEditor = true
+    }
+
+    func presentEditRule(_ rule: CategorizationRule) {
+        ruleEditor = CategorizationRuleEditorViewModel(
+            ruleRepository: ruleRepository,
+            ruleApplying: ruleApplying,
+            accountRepository: accountRepository,
+            existing: rule
+        )
+        showRuleEditor = true
+    }
+
+    func handleRuleEditorDismissed() async {
+        let saved = ruleEditor?.didSave == true
+        ruleEditor = nil
+        guard saved else { return }
+        let editingID = selectedTransactionID
+        await resetAndLoad()
+        if let editingID, let row = rows.first(where: { $0.id == editingID }) {
+            // Rule re-apply may have renamed/categorized — keep the open editor in sync
+            // so Save doesn’t write the pre-rule title back over the rename.
+            editingDescription = row.title
+            editingCategoryID = row.categoryID
+            editingCategoryLocked = row.categoryLocked
+            editingAccountName = row.accountName
+            editingLocation = row.location
+        }
+        await refreshMatchingRules()
+    }
+
+    func scheduleMatchingRulesRefresh() {
+        matchingRulesTask?.cancel()
+        matchingRulesTask = Task {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await refreshMatchingRules()
+        }
+    }
+
+    func refreshMatchingRules() async {
+        guard let id = selectedTransactionID,
+              let row = rows.first(where: { $0.id == id })
+        else {
+            matchingRules = []
+            return
+        }
+        let description = ParsedTransactionDescription.recombine(
+            title: editingDescription,
+            location: editingLocation
+        )
+        do {
+            let rules = try await ruleRepository.fetchAll()
+            matchingRules = CategorizationRuleMatcher.matchingRules(
+                rules,
+                description: description,
+                amount: row.amount,
+                accountID: row.accountID
+            )
+        } catch {
+            matchingRules = []
+        }
+    }
+
+    func ruleSummary(for rule: CategorizationRule) -> String {
+        CategorizationConditionFormatting.summary(for: rule.conditions) { [self] accountID in
+            accountNames[accountID]
+                ?? accounts.first(where: { $0.id == accountID })?.name
+                ?? "Account"
+        }
+    }
+
+    func ruleTitle(for rule: CategorizationRule) -> String {
+        if rule.appliesCategory {
+            return SystemCategory.category(for: rule.categoryID).name
+        }
+        if let renameTitle = rule.renameTitle {
+            return "Rename to “\(renameTitle)”"
+        }
+        return "Rename"
+    }
+
+    func ruleAppliesBadge(for rule: CategorizationRule) -> String? {
+        let isWinningCategory = rule.appliesCategory
+            && matchingRules.first(where: \.appliesCategory)?.id == rule.id
+        let isWinningRename = rule.renameTitle != nil
+            && matchingRules.first(where: { $0.renameTitle != nil })?.id == rule.id
+        if isWinningCategory && isWinningRename { return "Applies" }
+        if isWinningCategory { return "Category" }
+        if isWinningRename { return "Rename" }
+        return nil
     }
 
     func saveEdits() async {
@@ -241,10 +356,14 @@ final class TransactionsViewModel {
             location: editingLocation
         )
         let newCategoryID = editingCategoryID
+        let locked = editingCategoryLocked
+        isSavingEdits = true
+        defer { isSavingEdits = false }
         do {
             try await transactionRepository.updateCategory(
                 transactionID: id,
-                categoryID: newCategoryID
+                categoryID: newCategoryID,
+                categoryLocked: locked
             )
             try await transactionRepository.updateDescription(
                 transactionID: id,
@@ -261,7 +380,8 @@ final class TransactionsViewModel {
 
             rows[index] = rows[index].replacing(
                 description: storedDescription,
-                categoryID: newCategoryID
+                categoryID: newCategoryID,
+                categoryLocked: locked
             )
         } catch {
             bannerMessage = "Couldn't save changes."

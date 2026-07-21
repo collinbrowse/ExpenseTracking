@@ -3,12 +3,14 @@ import CashFlowKit
 
 struct TransactionRowModel: Identifiable, Hashable, Sendable {
     let id: TransactionID
+    let accountID: AccountID
     /// Merchant / payee without trailing bank location padding.
     let title: String
     /// City / region when SimpleFIN pads it after the merchant name.
     let location: String?
     let categoryText: String
     let categoryID: CategoryID
+    let categoryLocked: Bool
     let dateText: String
     let amountText: String
     let amountIsIncome: Bool
@@ -24,10 +26,12 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
     init(transaction: Transaction, accountName: String, calendar: Calendar = .current) {
         let parsed = ParseTransactionDescriptionUseCase.execute(transaction.description)
         self.id = transaction.id
+        self.accountID = transaction.accountID
         self.title = parsed.title
         self.location = parsed.location
         self.categoryText = transaction.category.name
         self.categoryID = transaction.categoryID
+        self.categoryLocked = transaction.categoryLocked
         self.dateText = DateFormatting.list(transaction.postedDate)
         self.accountName = accountName
         self.postedDate = transaction.postedDate
@@ -65,17 +69,22 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
     }
 
     /// Rebuilds display fields after a local edit without refetching the list.
-    func replacing(description: String, categoryID: CategoryID) -> TransactionRowModel {
+    func replacing(
+        description: String,
+        categoryID: CategoryID,
+        categoryLocked: Bool
+    ) -> TransactionRowModel {
         let transaction = Transaction(
             id: id,
-            accountID: AccountID(""),
+            accountID: accountID,
             externalID: "",
             amount: amount,
             postedDate: postedDate,
             description: description,
             categoryID: categoryID,
             userEditedCategory: true,
-            isPending: isPending
+            isPending: isPending,
+            categoryLocked: categoryLocked
         )
         return TransactionRowModel(transaction: transaction, accountName: accountName)
     }

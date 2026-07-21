@@ -8,6 +8,8 @@ final class DependencyContainer {
     let modelContainer: ModelContainer
     let transactionRepository: any TransactionRepository
     let accountRepository: any AccountRepository
+    let categorizationRuleRepository: any CategorizationRuleRepository
+    let categorizationRuleApplying: any CategorizationRuleApplying
     let bankLinking: CompositeBankLinkingService
     let syncServing: SyncCoordinator
     let connectionLifecycle: any ConnectionLifecycleServing
@@ -18,12 +20,19 @@ final class DependencyContainer {
 
     /// Launch-safe: SwiftData load/migration failures wipe and fall back; never fails for disk issues.
     convenience init(largeDemoSeed: Bool = false) {
+        // XCTest / unsigned CI hosts often lack App Group entitlements; SwiftData traps
+        // (does not throw) if `groupContainer` is requested without them.
+        let appGroupID = Self.isRunningUnitTests
+            ? nil
+            : NetSnapshotStore.defaultAppGroupID
         self.init(
-            modelContainer: ModelContainerFactory.makeResilient(
-                appGroupID: NetSnapshotStore.defaultAppGroupID
-            ),
+            modelContainer: ModelContainerFactory.makeResilient(appGroupID: appGroupID),
             largeDemoSeed: largeDemoSeed
         )
+    }
+
+    private static var isRunningUnitTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
     /// Tests / previews that need an explicit in-memory (or throw-on-failure) stack.
@@ -40,6 +49,12 @@ final class DependencyContainer {
         self.modelContainer = modelContainer
         self.transactionRepository = SwiftDataTransactionRepository(modelContainer: modelContainer)
         self.accountRepository = SwiftDataAccountRepository(modelContainer: modelContainer)
+        self.categorizationRuleRepository = SwiftDataCategorizationRuleRepository(
+            modelContainer: modelContainer
+        )
+        self.categorizationRuleApplying = CategorizationRuleReapplier(
+            modelContainer: modelContainer
+        )
         let demo = DemoBankLinkingService(
             seedSize: largeDemoSeed ? .large : .standard
         )
