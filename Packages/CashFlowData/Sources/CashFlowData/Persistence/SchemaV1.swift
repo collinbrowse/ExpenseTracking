@@ -1,5 +1,5 @@
 import Foundation
-import SwiftData
+@preconcurrency import SwiftData
 
 /// Single versioned schema.
 ///
@@ -8,7 +8,8 @@ import SwiftData
 /// `Duplicate version checksums detected`. Additive fields use defaults on the
 /// `@Model` types; incompatible stores are wiped in `ModelContainerFactory`.
 public enum CashFlowSchemaV1: VersionedSchema {
-    public static let versionIdentifier = Schema.Version(1, 0, 0)
+    // Schema.Version is not Sendable; safe as an immutable schema constant.
+    public nonisolated(unsafe) static let versionIdentifier = Schema.Version(1, 0, 0)
     public static var models: [any PersistentModel.Type] {
         [
             AccountEntity.self,
