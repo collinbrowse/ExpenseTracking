@@ -33,4 +33,13 @@ struct ModelContainerFactoryTests {
         #expect(!dirs.isEmpty)
         #expect(dirs.contains(where: { $0.path.contains("Application Support") }))
     }
+
+    @Test("makeResilient succeeds when App Group is unavailable")
+    func makeResilientWithoutAppGroup() {
+        // Empty / nonsense group IDs resolve to no container URL — must not trap.
+        let container = ModelContainerFactory.makeResilient(
+            appGroupID: "group.com.expensetracking.unavailable-ci"
+        )
+        #expect(container.schema.entities.isEmpty == false)
+    }
 }
