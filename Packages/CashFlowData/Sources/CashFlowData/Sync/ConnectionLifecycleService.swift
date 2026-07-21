@@ -43,6 +43,7 @@ public actor ConnectionLifecycleService: ConnectionLifecycleServing {
         await sync.cancel()
         try? await bankLinking.unlink(removeLocalData: false)
         try await resetter.resetAll()
+        try await resetter.deleteAllCategorizationRules()
     }
 
     public func resetLocalDataKeepingLink() async throws -> LinkedConnection {

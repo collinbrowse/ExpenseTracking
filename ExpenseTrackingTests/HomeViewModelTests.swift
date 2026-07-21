@@ -113,8 +113,14 @@ private struct MockTransactionRepository: TransactionRepository {
         transactions.map(\.postedDate).min()
     }
 
-    func updateCategory(transactionID: TransactionID, categoryID: CategoryID) async throws {}
+    func updateCategory(
+        transactionID: TransactionID,
+        categoryID: CategoryID,
+        categoryLocked: Bool
+    ) async throws {}
     func updateDescription(transactionID: TransactionID, description: String) async throws {}
+    func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {}
+    func fetchAllForCategorization() async throws -> [Transaction] { transactions }
 }
 
 private struct MockSyncServing: SyncServing {

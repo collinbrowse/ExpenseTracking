@@ -81,6 +81,10 @@ public actor SyncCoordinator: SyncServing {
     private func performSync() async throws -> LinkedConnection {
         try Task.checkCancellation()
 
+        // Restore durable Demo / SimpleFIN mode before fetch — in-memory link state
+        // is lost on process death and resolveModeIfNeeded cannot see ConnectionEntity.
+        _ = await connectionStatus()
+
         let context = ModelContext(modelContainer)
         let existing = try fetchConnection(context: context)
         let needsHistoryBackfill = existing?.historyBackfillComplete != true

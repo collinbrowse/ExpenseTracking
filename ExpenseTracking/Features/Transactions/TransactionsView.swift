@@ -233,39 +233,130 @@ struct TransactionsView: View {
                         }
                     }
                     .accessibilityIdentifier("transactions.editor.category")
+
+                    Toggle("Lock category", isOn: $viewModel.editingCategoryLocked)
+                        .accessibilityIdentifier("transactions.editor.lock")
+
+                    Button("Create Rule…") {
+                        viewModel.presentCreateRule()
+                    }
+                    .disabled(viewModel.isSavingEdits)
+                    .accessibilityIdentifier("transactions.editor.createRule")
                 } footer: {
-                    // Footer sits outside the inset grouped card; system spacing
-                    // matches the title → section gap above.
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(viewModel.editingAccountName)
+                    Text("When locked, rules won’t change this transaction’s category. Rename rules can still update the title.")
+                }
+
+                if !viewModel.matchingRules.isEmpty {
+                    Section {
+                        ForEach(viewModel.matchingRules) { rule in
+                            Button {
+                                viewModel.presentEditRule(rule)
+                            } label: {
+                                HStack(alignment: .center, spacing: 12) {
+                                    Image(systemName: rule.appliesCategory
+                                        ? CategoryIcon.systemName(for: rule.categoryID)
+                                        : "pencil")
+                                        .font(.body)
+                                        .frame(width: 28, height: 28)
+                                        .foregroundStyle(.primary)
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack(spacing: 6) {
+                                            Text(viewModel.ruleTitle(for: rule))
+                                                .font(.body.weight(.semibold))
+                                                .foregroundStyle(.primary)
+                                            if let badge = viewModel.ruleAppliesBadge(for: rule) {
+                                                Text(badge)
+                                                    .font(.caption.weight(.semibold))
+                                                    .foregroundStyle(.secondary)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(
+                                                        Color(uiColor: .tertiarySystemFill),
+                                                        in: Capsule()
+                                                    )
+                                            }
+                                        }
+                                        Text(viewModel.ruleSummary(for: rule))
+                                            .font(.footnote)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(2)
+                                    }
+
+                                    Spacer(minLength: 8)
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Edit rule \(viewModel.ruleTitle(for: rule))")
+                        }
+                    } header: {
+                        Text("Matching rules")
+                    } footer: {
+                        Text(
+                            viewModel.editingCategoryLocked
+                                ? "These rules match this transaction. Lock prevents category changes; rename can still apply."
+                                : "Rules that match this transaction. Category and rename can each apply from different rules."
+                        )
+                    }
+                }
+
+                Section {
+                    Text(viewModel.editingAccountName)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .accessibilityIdentifier("transactions.editor.account")
+                        .accessibilityLabel("Account \(viewModel.editingAccountName)")
+                } header: {
+                    Text("Account")
+                }
+
+                if let location = viewModel.editingLocation, !location.isEmpty {
+                    Section {
+                        Text(location)
                             .font(.subheadline)
                             .foregroundStyle(.primary)
-                            .accessibilityIdentifier("transactions.editor.account")
-                            .accessibilityLabel("Account \(viewModel.editingAccountName)")
-                        if let location = viewModel.editingLocation, !location.isEmpty {
-                            Text(location)
-                                .font(.subheadline)
-                                .foregroundStyle(.primary)
-                                .accessibilityIdentifier("transactions.editor.location")
-                                .accessibilityLabel("Location \(location)")
-                        }
+                            .accessibilityIdentifier("transactions.editor.location")
+                            .accessibilityLabel("Location \(location)")
+                    } header: {
+                        Text("Location")
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .navigationTitle("Edit Transaction")
+            .dismissKeyboardOnEmptyTap()
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: viewModel.editingDescription) { _, _ in
+                viewModel.scheduleMatchingRulesRefresh()
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { viewModel.selectedTransactionID = nil }
+                    Button("Cancel") {
+                        viewModel.selectedTransactionID = nil
+                        viewModel.matchingRules = []
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         Task { await viewModel.saveEdits() }
                     }
+                    .disabled(viewModel.isSavingEdits)
+                }
+            }
+            .sheet(isPresented: $viewModel.showRuleEditor, onDismiss: {
+                Task { await viewModel.handleRuleEditorDismissed() }
+            }) {
+                NavigationStack {
+                    if let editor = viewModel.ruleEditor {
+                        CategorizationRuleEditorView(viewModel: editor)
+                    }
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 }
 

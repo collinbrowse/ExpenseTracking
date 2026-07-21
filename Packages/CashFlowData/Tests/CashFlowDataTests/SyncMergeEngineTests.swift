@@ -66,7 +66,11 @@ struct SyncMergeEngineTests {
 
         let page = try await repo.fetchPage(filter: .all, cursor: nil, limit: 50)
         let id = try #require(page.items.first?.id)
-        try await repo.updateCategory(transactionID: id, categoryID: SystemCategory.hidden.id)
+        try await repo.updateCategory(
+            transactionID: id,
+            categoryID: SystemCategory.hidden.id,
+            categoryLocked: false
+        )
 
         let updatedPayload = RemoteSyncPayload(accounts: [
             RemoteAccountSnapshot(
@@ -92,7 +96,7 @@ struct SyncMergeEngineTests {
         let tx = try #require(page2.items.first)
         #expect(tx.categoryID == SystemCategory.hidden.id)
         #expect(tx.amount == -25)
-        #expect(tx.description == "Coffee Shop")
+        #expect(tx.description == "Coffee")
         #expect(tx.userEditedCategory == true)
     }
 

@@ -17,13 +17,20 @@ public protocol TransactionRepository: Sendable {
 
     func updateCategory(
         transactionID: TransactionID,
-        categoryID: CategoryID
+        categoryID: CategoryID,
+        categoryLocked: Bool
     ) async throws
 
     func updateDescription(
         transactionID: TransactionID,
         description: String
     ) async throws
+
+    /// Store-wide write for categorization rule re-apply. Not for list UI.
+    func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws
+
+    /// All non-pending transactions for rule re-apply. Not for list UI pagination.
+    func fetchAllForCategorization() async throws -> [Transaction]
 }
 
 public protocol AccountRepository: Sendable {

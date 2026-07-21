@@ -19,6 +19,7 @@ public actor LocalDataResetter {
         do {
             // Delete via account cascade — batch-deleting TransactionEntity alone trips
             // the mandatory inverse on TransactionEntity.account.
+            // Categorization rules are intentionally kept (user prefs across clear-local / relink).
             let accounts = try context.fetch(FetchDescriptor<AccountEntity>())
             for account in accounts {
                 context.delete(account)
@@ -39,6 +40,24 @@ public actor LocalDataResetter {
         } catch {
             throw CashFlowError.persistence(
                 message: "Couldn't clear local store. \(error.localizedDescription)"
+            )
+        }
+    }
+
+    /// Removes user categorization rules. Call only from erase-everything.
+    public func deleteAllCategorizationRules() async throws {
+        let context = ModelContext(modelContainer)
+        do {
+            let rules = try context.fetch(FetchDescriptor<CategorizationRuleEntity>())
+            for rule in rules {
+                context.delete(rule)
+            }
+            try context.save()
+        } catch let error as CashFlowError {
+            throw error
+        } catch {
+            throw CashFlowError.persistence(
+                message: "Couldn't clear categorization rules. \(error.localizedDescription)"
             )
         }
     }

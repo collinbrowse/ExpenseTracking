@@ -8,6 +8,8 @@ final class DependencyContainer {
     let modelContainer: ModelContainer
     let transactionRepository: any TransactionRepository
     let accountRepository: any AccountRepository
+    let categorizationRuleRepository: any CategorizationRuleRepository
+    let categorizationRuleApplying: any CategorizationRuleApplying
     let bankLinking: CompositeBankLinkingService
     let syncServing: SyncCoordinator
     let connectionLifecycle: any ConnectionLifecycleServing
@@ -40,6 +42,12 @@ final class DependencyContainer {
         self.modelContainer = modelContainer
         self.transactionRepository = SwiftDataTransactionRepository(modelContainer: modelContainer)
         self.accountRepository = SwiftDataAccountRepository(modelContainer: modelContainer)
+        self.categorizationRuleRepository = SwiftDataCategorizationRuleRepository(
+            modelContainer: modelContainer
+        )
+        self.categorizationRuleApplying = CategorizationRuleReapplier(
+            modelContainer: modelContainer
+        )
         let demo = DemoBankLinkingService(
             seedSize: largeDemoSeed ? .large : .standard
         )

@@ -21,7 +21,9 @@ struct RootTabView: View {
             initialValue: TransactionsViewModel(
                 transactionRepository: container.transactionRepository,
                 accountRepository: container.accountRepository,
-                syncServing: container.syncServing
+                syncServing: container.syncServing,
+                ruleRepository: container.categorizationRuleRepository,
+                ruleApplying: container.categorizationRuleApplying
             )
         )
         _accountsViewModel = State(
@@ -58,7 +60,11 @@ struct RootTabView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         NavigationLink {
-                            SettingsView()
+                            SettingsView(
+                                ruleRepository: container.categorizationRuleRepository,
+                                ruleApplying: container.categorizationRuleApplying,
+                                accountRepository: container.accountRepository
+                            )
                         } label: {
                             Image(systemName: "gearshape")
                         }

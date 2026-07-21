@@ -1,8 +1,27 @@
 import SwiftUI
+import CashFlowKit
 
 struct SettingsView: View {
+    let ruleRepository: any CategorizationRuleRepository
+    let ruleApplying: any CategorizationRuleApplying
+    let accountRepository: any AccountRepository
+
     var body: some View {
         List {
+            Section("Categorization") {
+                NavigationLink {
+                    CategorizationRulesView(
+                        viewModel: CategorizationRulesViewModel(
+                            ruleRepository: ruleRepository,
+                            ruleApplying: ruleApplying,
+                            accountRepository: accountRepository
+                        )
+                    )
+                } label: {
+                    Text("Categorization Rules")
+                }
+            }
+
             Section("About") {
                 LabeledContent("Version", value: appVersion)
                 LabeledContent("Build", value: appBuild)

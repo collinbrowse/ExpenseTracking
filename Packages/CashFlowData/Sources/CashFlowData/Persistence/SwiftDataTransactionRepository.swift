@@ -61,7 +61,8 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
 
     public func updateCategory(
         transactionID: TransactionID,
-        categoryID: CategoryID
+        categoryID: CategoryID,
+        categoryLocked: Bool
     ) async throws {
         let context = ModelContext(modelContainer)
         let id = transactionID.rawValue
@@ -73,6 +74,7 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         }
         entity.categoryID = categoryID.rawValue
         entity.userEditedCategory = true
+        entity.categoryLocked = categoryLocked
         try context.save()
     }
 
@@ -90,6 +92,33 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         }
         entity.transactionDescription = description
         try context.save()
+    }
+
+    public func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {
+        guard !assignments.isEmpty else { return }
+        let context = ModelContext(modelContainer)
+        let byID = Dictionary(uniqueKeysWithValues: assignments.map {
+            ($0.transactionID.rawValue, $0)
+        })
+        let ids = Array(byID.keys)
+        let descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate { ids.contains($0.id) }
+        )
+        let entities = try context.fetch(descriptor)
+        for entity in entities {
+            guard let assignment = byID[entity.id] else { continue }
+            entity.categoryID = assignment.categoryID.rawValue
+            entity.userEditedCategory = assignment.userEditedCategory
+        }
+        try context.save()
+    }
+
+    public func fetchAllForCategorization() async throws -> [Transaction] {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate { !$0.isPending }
+        )
+        return try context.fetch(descriptor).map(EntityMappers.transaction(from:))
     }
 
     /// Keyset scan that can walk the full store (no hard 1k cap) for infinite scrolling.

@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9EFF7C2CF98E40319DAC547A /* DismissKeyboardOnTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12E5B50B5BE342748347C557 /* DismissKeyboardOnTap.swift */; };
+		ADAE84B2E3954881853C84AA /* CategorizationRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 645BBAF48D63471AA27A2F1A /* CategorizationRulesView.swift */; };
+		DDB5210C0C0B4E37B7704D56 /* CategorizationRulesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1738992556AB4999AF6368C1 /* CategorizationRulesViewModel.swift */; };
+		EF54D8266E5C44C999A81D67 /* CategorizationRuleEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F687067CAB7E4627A7ACC797 /* CategorizationRuleEditorView.swift */; };
+		1ED0F9C36997403F98B28ECF /* CategorizationRuleEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E035E5BFC85490294655D7C /* CategorizationRuleEditorViewModel.swift */; };
 		0EBF6F0A258BAFB764F4746D /* HomeRangeOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D7C90DEF9C2C555D59F74DF /* HomeRangeOption.swift */; };
 		261430CD8301182DC433B626 /* CashFlowWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FCFCCAC67FE975168E1093 /* CashFlowWidget.swift */; };
 		2D2637D4415DA7734E8B6134 /* HomeViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB1A1F5F797ECAAF4EFE033B /* HomeViewModelTests.swift */; };
@@ -70,6 +75,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		12E5B50B5BE342748347C557 /* DismissKeyboardOnTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DismissKeyboardOnTap.swift; sourceTree = "<group>"; };
+		645BBAF48D63471AA27A2F1A /* CategorizationRulesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorizationRulesView.swift; sourceTree = "<group>"; };
+		1738992556AB4999AF6368C1 /* CategorizationRulesViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorizationRulesViewModel.swift; sourceTree = "<group>"; };
+		F687067CAB7E4627A7ACC797 /* CategorizationRuleEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorizationRuleEditorView.swift; sourceTree = "<group>"; };
+		2E035E5BFC85490294655D7C /* CategorizationRuleEditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CategorizationRuleEditorViewModel.swift; sourceTree = "<group>"; };
 		0CDBDD123B3DA6ADEE585025 /* ExpenseTrackingWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ExpenseTrackingWidget.entitlements; sourceTree = "<group>"; };
 		122E426B97FE7DF415AC00A6 /* TransactionAmountSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionAmountSearch.swift; sourceTree = "<group>"; };
 		202835CE549880BCB063FDE8 /* AccountsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsViewModel.swift; sourceTree = "<group>"; };
@@ -155,6 +165,7 @@
 			isa = PBXGroup;
 			children = (
 				BE5B0CF9A3FE0413DF3383C1 /* CategoryIcon.swift */,
+				12E5B50B5BE342748347C557 /* DismissKeyboardOnTap.swift */,
 				9A4DCF42C34E246643DBD28B /* Theme.swift */,
 			);
 			path = DesignSystem;
@@ -203,6 +214,7 @@
 		665AFD032968F0BBC31515C8 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				42AF5F2C3DD64C0588C15B2B /* CategorizationRules */,
 				03D2746CE23C26CBA6B723ED /* Accounts */,
 				80E9103E17C0B24F496FB901 /* Home */,
 				81039BEF72F53B5E55D0C00B /* Settings */,
@@ -230,6 +242,17 @@
 				F0C17FE9BD534E5B79FBFF2D /* NetCashFlowChartView.swift */,
 			);
 			path = Home;
+			sourceTree = "<group>";
+		};
+		42AF5F2C3DD64C0588C15B2B /* CategorizationRules */ = {
+			isa = PBXGroup;
+			children = (
+				645BBAF48D63471AA27A2F1A /* CategorizationRulesView.swift */,
+				1738992556AB4999AF6368C1 /* CategorizationRulesViewModel.swift */,
+				F687067CAB7E4627A7ACC797 /* CategorizationRuleEditorView.swift */,
+				2E035E5BFC85490294655D7C /* CategorizationRuleEditorViewModel.swift */,
+			);
+			path = CategorizationRules;
 			sourceTree = "<group>";
 		};
 		81039BEF72F53B5E55D0C00B /* Settings */ = {
@@ -397,6 +420,7 @@
 				7C1E4A92B0D84F6E9A2B3C5D /* SimpleFINLinkSheet.swift in Sources */,
 				38C9087866C25402702D0627 /* AppRouter.swift in Sources */,
 				3572B38FE34FA13B23EF9CCC /* CategoryIcon.swift in Sources */,
+				9EFF7C2CF98E40319DAC547A /* DismissKeyboardOnTap.swift in Sources */,
 				37999ECE509D1C74D1E5F4B3 /* DependencyContainer.swift in Sources */,
 				8D720293339928DB087B893E /* ExpenseTrackingApp.swift in Sources */,
 				0EBF6F0A258BAFB764F4746D /* HomeRangeOption.swift in Sources */,
@@ -404,6 +428,10 @@
 				A66502E7095A56AF056221F4 /* HomeViewModel.swift in Sources */,
 				DB33B378D6D99DB9AD502714 /* NetCashFlowChartView.swift in Sources */,
 				5FB2A832F69A71C0C7B581A7 /* RootTabView.swift in Sources */,
+				ADAE84B2E3954881853C84AA /* CategorizationRulesView.swift in Sources */,
+				DDB5210C0C0B4E37B7704D56 /* CategorizationRulesViewModel.swift in Sources */,
+				EF54D8266E5C44C999A81D67 /* CategorizationRuleEditorView.swift in Sources */,
+				1ED0F9C36997403F98B28ECF /* CategorizationRuleEditorViewModel.swift in Sources */,
 				55805C3F73D0CDD496A07CDA /* SettingsView.swift in Sources */,
 				B829D2866F033E3B98B30506 /* Theme.swift in Sources */,
 				D851F23FF5D168497B488968 /* TransactionAmountSearch.swift in Sources */,
