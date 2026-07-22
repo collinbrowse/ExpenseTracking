@@ -40,6 +40,10 @@ public final class AccountEntity {
     /// When true, sync keeps local `name` and does not apply SimpleFIN's account name.
     /// Default on the property (not only init) so lightweight migration can fill existing rows.
     public var userEditedName: Bool = false
+    /// SimpleFIN Bridge connection id for scoping provider errors.
+    public var connectionExternalID: String?
+    /// Last provider sync issue for this account; `nil` means healthy.
+    public var syncIssue: String?
 
     @Relationship(deleteRule: .cascade, inverse: \TransactionEntity.account)
     public var transactions: [TransactionEntity] = []
@@ -52,7 +56,9 @@ public final class AccountEntity {
         currencyCode: String,
         balance: Decimal,
         balanceDate: Date,
-        userEditedName: Bool = false
+        userEditedName: Bool = false,
+        connectionExternalID: String? = nil,
+        syncIssue: String? = nil
     ) {
         self.id = id
         self.externalID = externalID
@@ -62,6 +68,8 @@ public final class AccountEntity {
         self.balance = balance
         self.balanceDate = balanceDate
         self.userEditedName = userEditedName
+        self.connectionExternalID = connectionExternalID
+        self.syncIssue = syncIssue
         self.transactions = []
     }
 }
@@ -124,7 +132,7 @@ public final class ConnectionEntity {
     public var needsReauth: Bool
     public var lastSuccessfulSyncAt: Date?
     public var isDemo: Bool = false
-    /// After one successful full lookback sync, later syncs use the watermark only.
+    /// After one successful full lookback sync, later syncs use watermark − incremental lookback.
     /// Default on the property so lightweight migration can fill existing rows.
     public var historyBackfillComplete: Bool = false
 

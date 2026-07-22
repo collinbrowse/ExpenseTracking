@@ -78,26 +78,14 @@ struct AccountsView: View {
                         Button {
                             onSelectAccount(account.id)
                         } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(account.name)
-                                        .foregroundStyle(.primary)
-                                    Text(account.institutionName)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 8)
-                                Text(CurrencyFormatting.usd(account.balance))
-                                    .font(.body.monospacedDigit())
-                                    .foregroundStyle(.primary)
-                                    .multilineTextAlignment(.trailing)
-                            }
+                            AccountRowView(
+                                account: account,
+                                syncDisplay: viewModel.syncDisplay(for: account)
+                            )
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("accounts.row.\(account.id.rawValue)")
-                        .accessibilityLabel(
-                            "\(account.name), \(account.institutionName), \(CurrencyFormatting.usd(account.balance))"
-                        )
+                        .accessibilityLabel(accountAccessibilityLabel(account))
                         .contextMenu {
                             Button("Rename") {
                                 viewModel.beginRename(account)
@@ -291,6 +279,83 @@ private enum AccountsConfirmAction: Identifiable {
         case .eraseEverything: return "Erase Everything"
         case .linkReplacingData: return "Continue"
         case .loadDemoReplacingData: return "Load Demo"
+        }
+    }
+}
+
+private extension AccountsView {
+    func accountAccessibilityLabel(_ account: Account) -> String {
+        let balance = CurrencyFormatting.usd(account.balance)
+        switch viewModel.syncDisplay(for: account) {
+        case .healthy:
+            return "\(account.name), \(account.institutionName), \(balance), sync OK"
+        case .issue(let message):
+            return "\(account.name), \(account.institutionName), \(balance), sync issue: \(message)"
+        case .none:
+            return "\(account.name), \(account.institutionName), \(balance)"
+        }
+    }
+}
+
+private struct AccountRowView: View {
+    let account: Account
+    let syncDisplay: AccountSyncDisplay
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            statusIcon
+                .font(.body)
+                .frame(width: 22, alignment: .center)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(account.name)
+                    .foregroundStyle(.primary)
+                Text(account.institutionName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                statusDetail
+            }
+
+            Spacer(minLength: 8)
+
+            Text(CurrencyFormatting.usd(account.balance))
+                .font(.body.monospacedDigit())
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        switch syncDisplay {
+        case .healthy:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Theme.positive)
+        case .issue:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Theme.warning)
+        case .none:
+            Image(systemName: "circle")
+                .foregroundStyle(Theme.muted)
+        }
+    }
+
+    @ViewBuilder
+    private var statusDetail: some View {
+        switch syncDisplay {
+        case .healthy:
+            Text("Sync OK")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.positive)
+        case .issue(let message):
+            Text(message)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        case .none:
+            EmptyView()
         }
     }
 }

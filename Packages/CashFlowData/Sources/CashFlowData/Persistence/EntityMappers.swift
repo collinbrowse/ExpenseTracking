@@ -10,7 +10,8 @@ enum EntityMappers {
             institutionName: entity.institutionName,
             currencyCode: entity.currencyCode,
             balance: entity.balance,
-            balanceDate: entity.balanceDate
+            balanceDate: entity.balanceDate,
+            syncIssue: entity.syncIssue
         )
     }
 

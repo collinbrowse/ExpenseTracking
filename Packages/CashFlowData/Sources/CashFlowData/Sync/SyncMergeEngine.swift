@@ -10,9 +10,10 @@ enum SyncMergeEngine {
         let rules = try loadRules(from: context)
         for remoteAccount in payload.accounts {
             let account = try upsertAccount(remoteAccount, context: context)
+            var remoteExternalIDs = Set<String>()
+            remoteExternalIDs.reserveCapacity(remoteAccount.transactions.count)
             for remoteTx in remoteAccount.transactions {
-                if remoteTx.isPending { continue }
-                if remoteTx.postedDate.timeIntervalSince1970 == 0 { continue }
+                remoteExternalIDs.insert(remoteTx.externalID)
                 try upsertTransaction(
                     remoteTx,
                     account: account,
@@ -20,6 +21,13 @@ enum SyncMergeEngine {
                     context: context
                 )
             }
+            // With pending=1, the payload's pending set is authoritative for this account.
+            // Drop local pendings that vanished (posted under a new id, or cancelled).
+            try removeStalePendingTransactions(
+                account: account,
+                remoteExternalIDs: remoteExternalIDs,
+                context: context
+            )
         }
         try context.save()
     }
@@ -55,6 +63,8 @@ enum SyncMergeEngine {
             existing.currencyCode = remote.currencyCode
             existing.balance = remote.balance
             existing.balanceDate = remote.balanceDate
+            existing.connectionExternalID = remote.connectionExternalID
+            existing.syncIssue = remote.syncIssue
             return existing
         }
 
@@ -66,7 +76,9 @@ enum SyncMergeEngine {
             currencyCode: remote.currencyCode,
             balance: remote.balance,
             balanceDate: remote.balanceDate,
-            userEditedName: false
+            userEditedName: false,
+            connectionExternalID: remote.connectionExternalID,
+            syncIssue: remote.syncIssue
         )
         context.insert(entity)
         return entity
@@ -128,6 +140,22 @@ enum SyncMergeEngine {
                 categoryLocked: false
             )
             context.insert(entity)
+        }
+    }
+
+    private static func removeStalePendingTransactions(
+        account: AccountEntity,
+        remoteExternalIDs: Set<String>,
+        context: ModelContext
+    ) throws {
+        let accountID = account.id
+        let descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate<TransactionEntity> {
+                $0.accountID == accountID && $0.isPending == true
+            }
+        )
+        for entity in try context.fetch(descriptor) where !remoteExternalIDs.contains(entity.externalID) {
+            context.delete(entity)
         }
     }
 }

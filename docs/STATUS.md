@@ -52,7 +52,9 @@ Code: `ExpenseTracking/Features/Accounts/`, `Features/Settings/`
 
 - `SyncCoordinator` — single-flight; cancel waits for slot; failures keep last good local data
 - `connectionStatus` assembles Keychain/Demo + `ConnectionEntity` (`needsReauth`, last sync)
-- Initial / incomplete history: ~2-year lookback (chunked ≤90 days for SimpleFIN) until `historyBackfillComplete`; later syncs use watermark − 2 days
+- Initial / incomplete history: ~2-year lookback (chunked ≤90 days with ~5-day overlap for SimpleFIN) until `historyBackfillComplete`; later syncs use watermark − 30 days
+- Pending transactions are requested (`pending=1`), persisted, shown in the list, and flip to posted on the same sync key when the bank posts them; Home net still excludes pending
+- Accounts list shows per-account sync health (Sync OK vs Bridge `errlist` issue); connection-scoped and account-scoped errors attach to the matching rows
 - Merge policy: **locked** category always kept; else matching **user rule** wins (even over manual edits); else user-edited category; else remote suggestion. Account name: user-edited wins. Remote wins amount / date / description / balance / institution
 - Category suggestion: user rules first, then built-in keywords (`SuggestTransactionCategoryUseCase`); unmatched credits → Other (not Income)
 - Demo provider for fixtures / portfolio; SimpleFIN for real institutions — **not coexisting in one store**

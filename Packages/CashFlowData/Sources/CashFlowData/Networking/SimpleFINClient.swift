@@ -4,6 +4,8 @@ import CashFlowKit
 public struct SimpleFINClient: Sendable {
     /// Bridge hard-caps `/accounts` at 90 days per request (≤45 is recommended; advisories are filtered).
     public static let maxAccountsRangeDays = 90
+    /// Bridge guidance: overlap windows so boundary txs are not missed when ranges are capped.
+    public static let windowOverlapDays = 5
 
     private let http: any HTTPClient
 
@@ -75,7 +77,8 @@ public struct SimpleFINClient: Sendable {
         let windows = Self.dateWindows(
             from: resolvedStart,
             to: resolvedEnd,
-            maxDays: Self.maxAccountsRangeDays
+            maxDays: Self.maxAccountsRangeDays,
+            overlapDays: Self.windowOverlapDays
         )
 
         var payloads: [RemoteSyncPayload] = []
@@ -104,6 +107,7 @@ public struct SimpleFINClient: Sendable {
         components?.queryItems = [
             URLQueryItem(name: "start-date", value: String(Int(startDate.timeIntervalSince1970))),
             URLQueryItem(name: "end-date", value: String(Int(endDate.timeIntervalSince1970))),
+            URLQueryItem(name: "pending", value: "1"),
             URLQueryItem(name: "version", value: "2"),
         ]
         guard let url = components?.url else {
@@ -120,22 +124,27 @@ public struct SimpleFINClient: Sendable {
         let connectionsByID = Dictionary(
             uniqueKeysWithValues: (dto.connections ?? []).map { ($0.connID, $0) }
         )
-        let accounts = dto.accounts.map { mapAccount($0, connectionsByID: connectionsByID) }
+        let mapped = dto.accounts.map { mapAccount($0, connectionsByID: connectionsByID) }
+        let accounts = Self.applyingSyncIssues(to: mapped, errors: dto.errlist ?? [])
         return RemoteSyncPayload(accounts: accounts, providerMessages: messages)
     }
 
-    /// Splits `[start, end]` into inclusive windows of at most `maxDays` days.
+    /// Splits `[start, end]` into inclusive windows of at most `maxDays` days,
+    /// advancing by `maxDays - overlapDays` so adjacent windows overlap.
     static func dateWindows(
         from start: Date,
         to end: Date,
         maxDays: Int,
+        overlapDays: Int = 0,
         calendar: Calendar = .current
     ) -> [ClosedRange<Date>] {
         precondition(maxDays > 0)
+        precondition(overlapDays >= 0 && overlapDays < maxDays)
         if end <= start {
             return [start...start]
         }
 
+        let stepDays = maxDays - overlapDays
         var windows: [ClosedRange<Date>] = []
         var cursor = start
         while cursor < end {
@@ -143,7 +152,10 @@ public struct SimpleFINClient: Sendable {
             let windowEnd = min(rawEnd, end)
             windows.append(cursor...windowEnd)
             if windowEnd >= end { break }
-            cursor = windowEnd
+            guard let next = calendar.date(byAdding: .day, value: stepDays, to: cursor),
+                  next > cursor
+            else { break }
+            cursor = next
         }
         return windows
     }
@@ -216,8 +228,94 @@ public struct SimpleFINClient: Sendable {
             currencyCode: primary.currencyCode,
             balance: primary.balance,
             balanceDate: primary.balanceDate,
-            transactions: Array(transactionsByID.values)
+            transactions: Array(transactionsByID.values),
+            connectionExternalID: primary.connectionExternalID ?? lhs.connectionExternalID ?? rhs.connectionExternalID,
+            syncIssue: mergeSyncIssues(lhs.syncIssue, rhs.syncIssue)
         )
+    }
+
+    /// Keeps any issue seen across chunked windows (do not clear just because one window was clean).
+    static func mergeSyncIssues(_ lhs: String?, _ rhs: String?) -> String? {
+        let parts = [lhs, rhs]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !parts.isEmpty else { return nil }
+        var seen = Set<String>()
+        var unique: [String] = []
+        for part in parts {
+            let key = part.lowercased()
+            guard seen.insert(key).inserted else { continue }
+            unique.append(part)
+        }
+        return unique.joined(separator: " ")
+    }
+
+    /// Attaches Bridge `errlist` entries to accounts by `account_id`, then `conn_id`, then globally.
+    static func applyingSyncIssues(
+        to accounts: [RemoteAccountSnapshot],
+        errors: [SimpleFINErrorDTO]
+    ) -> [RemoteAccountSnapshot] {
+        guard !errors.isEmpty else {
+            return accounts.map {
+                RemoteAccountSnapshot(
+                    externalID: $0.externalID,
+                    name: $0.name,
+                    institutionName: $0.institutionName,
+                    currencyCode: $0.currencyCode,
+                    balance: $0.balance,
+                    balanceDate: $0.balanceDate,
+                    transactions: $0.transactions,
+                    connectionExternalID: $0.connectionExternalID,
+                    syncIssue: nil
+                )
+            }
+        }
+
+        return accounts.map { account in
+            let messages = relevantSyncMessages(for: account, errors: errors)
+            return RemoteAccountSnapshot(
+                externalID: account.externalID,
+                name: account.name,
+                institutionName: account.institutionName,
+                currencyCode: account.currencyCode,
+                balance: account.balance,
+                balanceDate: account.balanceDate,
+                transactions: account.transactions,
+                connectionExternalID: account.connectionExternalID,
+                syncIssue: messages.isEmpty ? nil : messages.joined(separator: " ")
+            )
+        }
+    }
+
+    private static func relevantSyncMessages(
+        for account: RemoteAccountSnapshot,
+        errors: [SimpleFINErrorDTO]
+    ) -> [String] {
+        var seen = Set<String>()
+        var messages: [String] = []
+        for error in errors {
+            let message = error.msg.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !message.isEmpty, !isBenignDateRangeAdvisory(message) else { continue }
+
+            let accountID = error.accountID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let connID = error.connID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+            let matches: Bool
+            if !accountID.isEmpty {
+                matches = accountID == account.externalID
+            } else if !connID.isEmpty {
+                matches = connID == account.connectionExternalID
+            } else {
+                // Unscoped provider errors apply to every account in the payload.
+                matches = true
+            }
+            guard matches else { continue }
+
+            let key = message.lowercased()
+            guard seen.insert(key).inserted else { continue }
+            messages.append(message)
+        }
+        return messages
     }
 
     private func mapAccount(
@@ -240,10 +338,15 @@ public struct SimpleFINClient: Sendable {
                 description: parsed.title,
                 amount: amount
             )
+            // Pending often arrives with `posted == 0`. Use "now" so list sort/sections
+            // stay current; MergeSyncPolicy keeps the first-seen date across re-syncs.
+            let postedDate = posted == 0
+                ? Date.now
+                : Date(timeIntervalSince1970: TimeInterval(posted))
             return RemoteTransactionSnapshot(
                 externalID: tx.id,
                 amount: amount,
-                postedDate: Date(timeIntervalSince1970: TimeInterval(posted)),
+                postedDate: postedDate,
                 description: sanitizedDescription,
                 isPending: pending,
                 suggestedCategoryID: category
@@ -256,7 +359,8 @@ public struct SimpleFINClient: Sendable {
             currencyCode: dto.currency.count == 3 ? dto.currency : "USD",
             balance: balance,
             balanceDate: Date(timeIntervalSince1970: TimeInterval(dto.balanceDate)),
-            transactions: txs
+            transactions: txs,
+            connectionExternalID: dto.connID
         )
     }
 

@@ -123,13 +123,24 @@ final class TransactionsViewModel {
         }
     }
 
-    /// Month sections in descending chronological order (already sorted in `rows`).
+    /// Pending section first (when present), then month sections newest → oldest.
     var sections: [TransactionMonthSection] {
+        let visible = displayedRows
+        let pendingRows = visible.filter(\.isPending)
+        let postedRows = visible.filter { !$0.isPending }
+
+        var result: [TransactionMonthSection] = []
+        if !pendingRows.isEmpty {
+            result.append(
+                TransactionMonthSection(key: "pending", title: "Pending", rows: pendingRows)
+            )
+        }
+
         var orderedKeys: [String] = []
         var buckets: [String: [TransactionRowModel]] = [:]
         var titles: [String: String] = [:]
 
-        for row in displayedRows {
+        for row in postedRows {
             if buckets[row.sectionKey] == nil {
                 orderedKeys.append(row.sectionKey)
                 titles[row.sectionKey] = row.sectionTitle
@@ -138,10 +149,11 @@ final class TransactionsViewModel {
             buckets[row.sectionKey]?.append(row)
         }
 
-        return orderedKeys.compactMap { key in
+        result.append(contentsOf: orderedKeys.compactMap { key in
             guard let rows = buckets[key], let title = titles[key] else { return nil }
             return TransactionMonthSection(key: key, title: title, rows: rows)
-        }
+        })
+        return result
     }
 
     func onAppear() async {

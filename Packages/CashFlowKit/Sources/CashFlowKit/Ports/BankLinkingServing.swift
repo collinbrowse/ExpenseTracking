@@ -30,6 +30,10 @@ public struct RemoteAccountSnapshot: Sendable, Equatable {
     public let balance: Decimal
     public let balanceDate: Date
     public let transactions: [RemoteTransactionSnapshot]
+    /// SimpleFIN Bridge `conn_id` when present (used to attach connection-scoped errors).
+    public let connectionExternalID: String?
+    /// Provider error for this account from the latest fetch, if any.
+    public let syncIssue: String?
 
     public init(
         externalID: String,
@@ -38,7 +42,9 @@ public struct RemoteAccountSnapshot: Sendable, Equatable {
         currencyCode: String,
         balance: Decimal,
         balanceDate: Date,
-        transactions: [RemoteTransactionSnapshot]
+        transactions: [RemoteTransactionSnapshot],
+        connectionExternalID: String? = nil,
+        syncIssue: String? = nil
     ) {
         self.externalID = externalID
         self.name = name
@@ -47,6 +53,8 @@ public struct RemoteAccountSnapshot: Sendable, Equatable {
         self.balance = balance
         self.balanceDate = balanceDate
         self.transactions = transactions
+        self.connectionExternalID = connectionExternalID
+        self.syncIssue = syncIssue
     }
 }
 

@@ -104,7 +104,7 @@ public enum MergeSyncPolicy: Sendable {
             accountID: remote.accountID,
             externalID: remote.externalID,
             amount: remote.amount,
-            postedDate: remote.postedDate,
+            postedDate: resolvedPostedDate(local: local, remote: remote),
             description: description,
             categoryID: categoryID,
             currencyCode: remote.currencyCode,
@@ -112,6 +112,14 @@ public enum MergeSyncPolicy: Sendable {
             isPending: remote.isPending,
             categoryLocked: locked
         )
+    }
+
+    /// While still pending, keep the earlier date so sync-time stand-ins for `posted == 0` do not churn.
+    private static func resolvedPostedDate(local: Transaction, remote: Transaction) -> Date {
+        if remote.isPending && local.isPending {
+            return min(local.postedDate, remote.postedDate)
+        }
+        return remote.postedDate
     }
 
     private static func renamedDescription(from description: String, renameTitle: String?) -> String {

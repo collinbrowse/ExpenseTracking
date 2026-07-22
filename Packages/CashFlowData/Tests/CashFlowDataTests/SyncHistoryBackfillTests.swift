@@ -49,9 +49,13 @@ struct SyncHistoryBackfillTests {
         _ = try await sync.syncNow()
 
         let incrementalStart = await http.earliestRequestedStart()
-        let tenDaysAgo = Calendar.current.date(byAdding: .day, value: -10, to: .now)!
+        let expected = Calendar.current.date(
+            byAdding: .day,
+            value: -SyncCoordinator.incrementalLookbackDays,
+            to: .now
+        )!
         #expect(incrementalStart != nil)
-        #expect(incrementalStart! > tenDaysAgo)
+        #expect(abs(incrementalStart!.timeIntervalSince(expected)) < 172_800)
     }
 
     @Test("resetLocalDataKeepingLink clears historyBackfillComplete")
