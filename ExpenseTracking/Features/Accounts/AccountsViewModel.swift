@@ -32,6 +32,20 @@ final class AccountsViewModel {
         !connection.isLinked && !accounts.isEmpty
     }
 
+    /// Per-row sync health for the Accounts list. Healthy only when linked and issue-free.
+    func syncDisplay(for account: Account) -> AccountSyncDisplay {
+        guard connection.isLinked else { return .none }
+        if connection.needsReauth {
+            return .issue("Reconnect required")
+        }
+        if let issue = account.syncIssue?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !issue.isEmpty
+        {
+            return .issue(issue)
+        }
+        return .healthy
+    }
+
     init(
         connectionLifecycle: any ConnectionLifecycleServing,
         syncServing: any SyncServing,
@@ -397,6 +411,12 @@ final class AccountsViewModel {
     private func statusDismissDelay(for connection: LinkedConnection) -> TimeInterval {
         connection.providerMessages.isEmpty ? 2.4 : 4.5
     }
+}
+
+enum AccountSyncDisplay: Equatable {
+    case none
+    case healthy
+    case issue(String)
 }
 
 enum AccountsErrorAction: Equatable {

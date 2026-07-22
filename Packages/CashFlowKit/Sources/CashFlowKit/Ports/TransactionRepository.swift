@@ -29,7 +29,7 @@ public protocol TransactionRepository: Sendable {
     /// Store-wide write for categorization rule re-apply. Not for list UI.
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws
 
-    /// All non-pending transactions for rule re-apply. Not for list UI pagination.
+    /// Posted (non-pending) transactions for rule re-apply. Not for list UI pagination.
     func fetchAllForCategorization() async throws -> [Transaction]
 }
 

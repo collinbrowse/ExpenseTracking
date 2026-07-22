@@ -5,6 +5,10 @@ import os
 import CashFlowKit
 
 public actor SyncCoordinator: SyncServing {
+    /// After history backfill, re-fetch this many days before the watermark so
+    /// pending→posted updates with older `posted` dates still arrive.
+    public static let incrementalLookbackDays = 30
+
     private let modelContainer: ModelContainer
     private let bankLinking: CompositeBankLinkingService
     private let snapshotStore: NetSnapshotStore
@@ -90,7 +94,11 @@ public actor SyncCoordinator: SyncServing {
         let needsHistoryBackfill = existing?.historyBackfillComplete != true
         let startDate: Date?
         if !needsHistoryBackfill, let watermark = existing?.lastSuccessfulSyncAt {
-            startDate = Calendar.current.date(byAdding: .day, value: -2, to: watermark)
+            startDate = Calendar.current.date(
+                byAdding: .day,
+                value: -Self.incrementalLookbackDays,
+                to: watermark
+            )
         } else {
             // Full lookback until one successful historical sync completes.
             // Watermark-only syncs must not run before that or older windows are never requested again.

@@ -145,6 +145,155 @@ struct SyncMergeEngineTests {
         #expect(entities.first?.userEditedName == true)
     }
 
+    @Test("Account syncIssue persists and clears on clean sync")
+    func accountSyncIssueRoundTrip() async throws {
+        let container = try ModelContainerFactory.make(inMemory: true)
+        let context = ModelContext(container)
+        let broken = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Checking",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: 10,
+                balanceDate: .now,
+                transactions: [],
+                connectionExternalID: "c1",
+                syncIssue: "Authentication failed for Bank"
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: broken, into: context)
+
+        let repo = SwiftDataAccountRepository(modelContainer: container)
+        let afterBroken = try #require(try await repo.fetchAll().first)
+        #expect(afterBroken.syncIssue == "Authentication failed for Bank")
+        #expect(afterBroken.hasSyncIssue)
+
+        let healthy = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Checking",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: 12,
+                balanceDate: .now,
+                transactions: [],
+                connectionExternalID: "c1",
+                syncIssue: nil
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: healthy, into: context)
+        let afterHealthy = try #require(try await repo.fetchAll().first)
+        #expect(afterHealthy.syncIssue == nil)
+        #expect(!afterHealthy.hasSyncIssue)
+        #expect(afterHealthy.balance == 12)
+    }
+
+    @Test("Pending transactions persist and flip to posted on same sync key")
+    func pendingPersistsThenPosts() async throws {
+        let container = try ModelContainerFactory.make(inMemory: true)
+        let context = ModelContext(container)
+        let pendingDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let pendingPayload = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Card",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: -50,
+                balanceDate: .now,
+                transactions: [
+                    RemoteTransactionSnapshot(
+                        externalID: "t-pending",
+                        amount: -42,
+                        postedDate: pendingDate,
+                        description: "RESTAURANT",
+                        isPending: true,
+                        suggestedCategoryID: SystemCategory.dining.id
+                    ),
+                ]
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: pendingPayload, into: context)
+
+        let repo = SwiftDataTransactionRepository(modelContainer: container)
+        let pendingPage = try await repo.fetchPage(filter: .all, cursor: nil, limit: 50)
+        let pendingTx = try #require(pendingPage.items.first)
+        #expect(pendingTx.isPending)
+        #expect(pendingTx.amount == -42)
+
+        let postedPayload = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Card",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: -50,
+                balanceDate: .now,
+                transactions: [
+                    RemoteTransactionSnapshot(
+                        externalID: "t-pending",
+                        amount: -42,
+                        postedDate: pendingDate,
+                        description: "RESTAURANT",
+                        isPending: false,
+                        suggestedCategoryID: SystemCategory.dining.id
+                    ),
+                ]
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: postedPayload, into: context)
+
+        let postedPage = try await repo.fetchPage(filter: .all, cursor: nil, limit: 50)
+        #expect(postedPage.items.count == 1)
+        let postedTx = try #require(postedPage.items.first)
+        #expect(!postedTx.isPending)
+        #expect(postedTx.id == pendingTx.id)
+    }
+
+    @Test("Stale pending rows are removed when absent from pending-capable payload")
+    func stalePendingRemoved() throws {
+        let container = try ModelContainerFactory.make(inMemory: true)
+        let context = ModelContext(container)
+
+        let withPending = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Card",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: -10,
+                balanceDate: .now,
+                transactions: [
+                    RemoteTransactionSnapshot(
+                        externalID: "gone",
+                        amount: -10,
+                        postedDate: .now,
+                        description: "TEMP",
+                        isPending: true
+                    ),
+                ]
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: withPending, into: context)
+        #expect(try context.fetch(FetchDescriptor<TransactionEntity>()).count == 1)
+
+        let cleared = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Card",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: -10,
+                balanceDate: .now,
+                transactions: []
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: cleared, into: context)
+        #expect(try context.fetch(FetchDescriptor<TransactionEntity>()).isEmpty)
+    }
+
     @Test("Keyset pagination returns stable pages")
     func keysetPagination() async throws {
         let container = try ModelContainerFactory.make(inMemory: true)

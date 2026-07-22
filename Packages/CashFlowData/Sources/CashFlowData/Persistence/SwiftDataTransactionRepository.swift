@@ -174,15 +174,8 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
             let cursorDate = cursor.postedDate
             let cursorID = cursor.id.rawValue
             descriptor.predicate = #Predicate<TransactionEntity> { entity in
-                entity.isPending == false
-                    && (
-                        entity.postedDate < cursorDate
-                            || (entity.postedDate == cursorDate && entity.id < cursorID)
-                    )
-            }
-        } else {
-            descriptor.predicate = #Predicate<TransactionEntity> { entity in
-                entity.isPending == false
+                entity.postedDate < cursorDate
+                    || (entity.postedDate == cursorDate && entity.id < cursorID)
             }
         }
 

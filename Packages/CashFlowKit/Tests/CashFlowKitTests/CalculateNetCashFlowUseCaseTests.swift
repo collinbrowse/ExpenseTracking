@@ -216,6 +216,64 @@ struct MergeSyncPolicyTests {
         #expect(merged.categoryID == SystemCategory.income.id)
         #expect(merged.userEditedCategory == false)
     }
+
+    @Test("Pending re-sync keeps earlier posted date")
+    func pendingKeepsFirstSeenDate() {
+        let earlier = Date(timeIntervalSince1970: 1_700_000_000)
+        let later = Date(timeIntervalSince1970: 1_700_100_000)
+        let local = Transaction(
+            id: TransactionID("t1"),
+            accountID: AccountID("a1"),
+            externalID: "ext",
+            amount: -12,
+            postedDate: earlier,
+            description: "Coffee",
+            categoryID: SystemCategory.dining.id,
+            isPending: true
+        )
+        let remote = Transaction(
+            id: TransactionID("t1"),
+            accountID: AccountID("a1"),
+            externalID: "ext",
+            amount: -12,
+            postedDate: later,
+            description: "Coffee",
+            categoryID: SystemCategory.dining.id,
+            isPending: true
+        )
+        let merged = MergeSyncPolicy.merge(local: local, remote: remote)
+        #expect(merged.postedDate == earlier)
+        #expect(merged.isPending)
+    }
+
+    @Test("Posted remote replaces pending date")
+    func postedReplacesPendingDate() {
+        let pendingDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let postedDate = Date(timeIntervalSince1970: 1_700_050_000)
+        let local = Transaction(
+            id: TransactionID("t1"),
+            accountID: AccountID("a1"),
+            externalID: "ext",
+            amount: -12,
+            postedDate: pendingDate,
+            description: "Coffee",
+            categoryID: SystemCategory.dining.id,
+            isPending: true
+        )
+        let remote = Transaction(
+            id: TransactionID("t1"),
+            accountID: AccountID("a1"),
+            externalID: "ext",
+            amount: -12,
+            postedDate: postedDate,
+            description: "Coffee",
+            categoryID: SystemCategory.dining.id,
+            isPending: false
+        )
+        let merged = MergeSyncPolicy.merge(local: local, remote: remote)
+        #expect(merged.postedDate == postedDate)
+        #expect(!merged.isPending)
+    }
 }
 
 @Suite("SystemCategory")

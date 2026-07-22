@@ -18,6 +18,8 @@ enum Theme {
     static let negative = Color(uiColor: .label)
 
     static let muted = Color(uiColor: .secondaryLabel)
+    /// Sync / connection problems on Accounts (high visibility, not destructive red).
+    static let warning = Color(uiColor: .systemOrange)
     static let screenPadding: CGFloat = 20
     static let sectionSpacing: CGFloat = 24
 

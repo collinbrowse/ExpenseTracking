@@ -32,6 +32,7 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
         self.categoryText = transaction.category.name
         self.categoryID = transaction.categoryID
         self.categoryLocked = transaction.categoryLocked
+        // Pending rows live under a dedicated section header; show the authorization date here.
         self.dateText = DateFormatting.list(transaction.postedDate)
         self.accountName = accountName
         self.postedDate = transaction.postedDate

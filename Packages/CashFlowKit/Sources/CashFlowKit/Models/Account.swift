@@ -20,6 +20,8 @@ public struct Account: Identifiable, Hashable, Sendable, Codable {
     public let currencyCode: String
     public let balance: Decimal
     public let balanceDate: Date
+    /// Provider-reported sync problem for this account, if any. `nil` means last sync was clean.
+    public let syncIssue: String?
 
     public init(
         id: AccountID,
@@ -28,7 +30,8 @@ public struct Account: Identifiable, Hashable, Sendable, Codable {
         institutionName: String,
         currencyCode: String,
         balance: Decimal,
-        balanceDate: Date
+        balanceDate: Date,
+        syncIssue: String? = nil
     ) {
         self.id = id
         self.externalID = externalID
@@ -37,5 +40,11 @@ public struct Account: Identifiable, Hashable, Sendable, Codable {
         self.currencyCode = currencyCode
         self.balance = balance
         self.balanceDate = balanceDate
+        self.syncIssue = syncIssue
+    }
+
+    public var hasSyncIssue: Bool {
+        guard let syncIssue else { return false }
+        return !syncIssue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

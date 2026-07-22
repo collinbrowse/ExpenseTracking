@@ -110,7 +110,10 @@ struct TransactionsView: View {
     }
 
     private func accessibilityLabel(for row: TransactionRowModel) -> String {
-        "\(row.title), \(row.categoryText), \(row.amountText), \(row.dateText)"
+        if row.isPending {
+            return "\(row.title), \(row.categoryText), \(row.amountText), Pending"
+        }
+        return "\(row.title), \(row.categoryText), \(row.amountText), \(row.dateText)"
     }
 
     private var activeFiltersRow: some View {
@@ -363,6 +366,13 @@ struct TransactionsView: View {
 private struct TransactionRowView: View {
     let row: TransactionRowModel
 
+    private var amountColor: Color {
+        if row.isPending {
+            return Theme.muted
+        }
+        return row.amountIsIncome ? Theme.positive : Color.primary
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: CategoryIcon.systemName(for: row.categoryID))
@@ -386,8 +396,8 @@ private struct TransactionRowView: View {
 
             VStack(alignment: .trailing, spacing: 3) {
                 Text(row.amountText)
-                    .font(.body.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(row.amountIsIncome ? Theme.positive : Color.primary)
+                    .font(.body.weight(row.isPending ? .medium : .semibold).monospacedDigit())
+                    .foregroundStyle(amountColor)
                 Text(row.dateText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
