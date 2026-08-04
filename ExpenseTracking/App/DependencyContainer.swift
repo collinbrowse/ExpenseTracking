@@ -16,6 +16,8 @@ final class DependencyContainer {
     let resetter: LocalDataResetter
     let connectivity: ConnectivityMonitor
     let calculateNetCashFlow: CalculateNetCashFlowUseCase
+    let appLockPreferences: any AppLockPreferencesStoring
+    let deviceAuthentication: any DeviceAuthenticationServing
     let useLargeDemoSeed: Bool
 
     /// Launch-safe: SwiftData load/migration failures wipe and fall back; never fails for disk issues.
@@ -80,5 +82,7 @@ final class DependencyContainer {
         )
         self.connectivity = ConnectivityMonitor()
         self.calculateNetCashFlow = CalculateNetCashFlowUseCase()
+        self.appLockPreferences = UserDefaultsAppLockPreferencesStore()
+        self.deviceAuthentication = LocalAuthenticationDeviceAuthenticator()
     }
 }

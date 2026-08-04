@@ -35,7 +35,7 @@ Code: `ExpenseTracking/Features/Transactions/`
 - Account list with balance on the trailing edge; tap opens Transactions filtered to that account
 - Local account rename (survives sync while the SimpleFIN account still matches); new accounts take the SimpleFIN name
 - First-launch onboarding: Demo · Link · Skip
-- Settings (gear from Accounts): About + local-data privacy note
+- Settings (gear from Accounts): About + local-data privacy note + app lock
 
 **Semantics**
 | Action | Credentials | Local accounts/txns |
@@ -47,6 +47,17 @@ Code: `ExpenseTracking/Features/Transactions/`
 | Erase everything | Cleared | Wiped |
 
 Code: `ExpenseTracking/Features/Accounts/`, `Features/Settings/`
+
+### App lock
+
+- Optional **Require Face ID / Touch ID** toggle in Settings (off by default)
+- Unlock with system biometrics and **device passcode fallback** (`deviceOwnerAuthentication`)
+- Re-locks after a fixed **15s** grace when leaving the app; quick switches do not re-prompt
+- Full-screen privacy cover while locked or backgrounded with lock enabled (app switcher)
+- Enabling / disabling requires a successful authentication challenge
+- Widget **unchanged** — This Month net still shows when lock is enabled
+
+Code: `ExpenseTracking/Features/AppLock/`, `Features/Settings/`, `CashFlowData/SecureStorage/`
 
 ### Sync & data
 
@@ -75,7 +86,7 @@ Code: `ExpenseTrackingWidget/`
 
 - Domain tests (`CashFlowKit`): net contribution, exclusions, ranges
 - Data tests (`CashFlowData`): merge, demo net, sync-related coverage
-- App tests (`ExpenseTrackingTests`): Home ViewModel, amount search helpers
+- App tests (`ExpenseTrackingTests`): Home ViewModel, App Lock ViewModel, amount search helpers
 - `scripts/check_architecture.sh` + GitHub Actions CI
 
 ### Categorization
@@ -98,7 +109,7 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 | Edited description | Manual / rule titles stick when category is sticky (`userEditedCategory`) or locked; otherwise re-sync can overwrite from remote |
 | Home date fetch | Posted txs for the range; date scoping may finish in memory when SwiftData predicates are fragile |
 | App Group | Widget prefers `group.com.expensetracking.shared`; falls back if signing/team/group isn’t set up |
-| Settings | About + privacy + Categorization Rules |
+| Settings | About + privacy + Categorization Rules + app lock |
 | Navigation helpers | `AppRouter` route enums exist but tabs use plain `NavigationStack`s |
 
 ## Deferred (not built)
@@ -106,7 +117,6 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 - JSON / CSV export, cloud backup, multi-device sync
 - CSV import, Plaid (or other aggregators requiring a backend)
 - Delete transaction API (forbidden for MVP)
-- Face ID / lock screen app lock
 - Budgets, multi-currency, analytics, marketing screenshot pack
 
 ### Categorization roadmap (remaining)

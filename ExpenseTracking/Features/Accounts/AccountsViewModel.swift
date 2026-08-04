@@ -389,6 +389,10 @@ final class AccountsViewModel {
                 return "No account is linked."
             case .cancelled:
                 return "Cancelled."
+            case .authenticationUnavailable:
+                return "Device authentication is unavailable. Set a passcode in Settings."
+            case .authenticationFailed:
+                return "Authentication failed. Try again."
             }
         }
         let description = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
