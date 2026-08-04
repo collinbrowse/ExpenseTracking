@@ -9,4 +9,6 @@ public enum CashFlowError: Error, Sendable, Equatable {
     case providerMessages([String])
     case notLinked
     case cancelled
+    case authenticationUnavailable
+    case authenticationFailed
 }

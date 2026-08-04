@@ -2,10 +2,12 @@ import SwiftUI
 
 struct RootTabView: View {
     let container: DependencyContainer
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab: AppTab = .home
     @State private var homeViewModel: HomeViewModel
     @State private var transactionsViewModel: TransactionsViewModel
     @State private var accountsViewModel: AccountsViewModel
+    @State private var appLockViewModel: AppLockViewModel
 
     init(container: DependencyContainer) {
         self.container = container
@@ -32,6 +34,12 @@ struct RootTabView: View {
                 syncServing: container.syncServing,
                 accountRepository: container.accountRepository,
                 useLargeDemoSeed: container.useLargeDemoSeed
+            )
+        )
+        _appLockViewModel = State(
+            initialValue: AppLockViewModel(
+                preferences: container.appLockPreferences,
+                authenticator: container.deviceAuthentication
             )
         )
     }
@@ -61,9 +69,12 @@ struct RootTabView: View {
                     ToolbarItem(placement: .topBarTrailing) {
                         NavigationLink {
                             SettingsView(
-                                ruleRepository: container.categorizationRuleRepository,
-                                ruleApplying: container.categorizationRuleApplying,
-                                accountRepository: container.accountRepository
+                                viewModel: SettingsViewModel(
+                                    ruleRepository: container.categorizationRuleRepository,
+                                    ruleApplying: container.categorizationRuleApplying,
+                                    accountRepository: container.accountRepository,
+                                    appLock: appLockViewModel
+                                )
                             )
                         } label: {
                             Image(systemName: "gearshape")
@@ -135,6 +146,27 @@ struct RootTabView: View {
             if tab == .home {
                 Task { await homeViewModel.reload(preferLoadingIndicator: false) }
             }
+        }
+        .overlay {
+            if appLockViewModel.shouldShowOverlay {
+                AppLockGateView(
+                    biometryDisplayName: appLockViewModel.biometryDisplayName,
+                    showUnlockControls: appLockViewModel.showUnlockControls,
+                    isAuthenticating: appLockViewModel.isAuthenticating,
+                    errorMessage: appLockViewModel.unlockErrorMessage,
+                    onUnlock: {
+                        Task { await appLockViewModel.unlock() }
+                    }
+                )
+                .transition(.opacity)
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            appLockViewModel.handleScenePhase(phase)
+        }
+        .onAppear {
+            appLockViewModel.handleScenePhase(scenePhase)
+            appLockViewModel.onAppear()
         }
     }
 }

@@ -16,8 +16,9 @@ The end-to-end personal MVP is **built and runnable**:
 | Widget — This Month net snapshot (small / medium / Lock Screen) | Shipped |
 | Local SwiftData + Keychain; no backend | Shipped |
 | Domain + data + app tests + architecture CI gate | Shipped |
+| App lock — Face ID / Touch ID + passcode, 15s grace | Shipped |
 
-**Not in MVP** (intentionally deferred): cloud backup / export, multi-device sync, CSV import, Plaid, delete-transaction, Face ID, budgets, multi-currency, analytics.
+**Not in MVP** (intentionally deferred): cloud backup / export, multi-device sync, CSV import, Plaid, delete-transaction, budgets, multi-currency, analytics.
 
 See [docs/STATUS.md](docs/STATUS.md) for a fuller feature inventory and known limitations.
 

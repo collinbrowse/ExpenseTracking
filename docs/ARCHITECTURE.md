@@ -47,7 +47,8 @@ Money amounts are `Decimal` end-to-end in domain/data/UI models. Charts may conv
 | `Features/Home` | Net hero, ranges, chart |
 | `Features/Transactions` | Paginated list, filters, search, edit |
 | `Features/Accounts` | Link / Demo / sync / onboarding |
-| `Features/Settings` | About + privacy note |
+| `Features/Settings` | About + privacy note + app lock toggle |
+| `Features/AppLock` | Lock gate overlay, privacy cover, Face ID / passcode unlock |
 | `DesignSystem` | Shared theme / formatting helpers |
 | `App` | Entry, tabs, `DependencyContainer` |
 
