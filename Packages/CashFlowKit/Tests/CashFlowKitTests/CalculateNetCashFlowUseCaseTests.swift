@@ -330,4 +330,15 @@ struct CashFlowDateRangeTests {
         let days = calendar.dateComponents([.day], from: interval.start, to: interval.end).day
         #expect(days == 30)
     }
+
+    @Test("Current month interval is month-to-date ending at now")
+    func currentMonthToDate() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_720_000_000) // mid-month-ish
+        let interval = CashFlowDateRange.month(now).interval(calendar: calendar, now: now)
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
+        #expect(interval.start == monthStart)
+        #expect(interval.end == now)
+    }
 }

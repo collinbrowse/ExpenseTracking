@@ -294,6 +294,66 @@ struct SyncMergeEngineTests {
         #expect(try context.fetch(FetchDescriptor<TransactionEntity>()).isEmpty)
     }
 
+
+    @Test("Local tags preserved on re-sync")
+    func preserveTags() async throws {
+        let container = try ModelContainerFactory.make(inMemory: true)
+        let txRepo = SwiftDataTransactionRepository(modelContainer: container)
+        let tagRepo = SwiftDataTagRepository(modelContainer: container)
+        let context = ModelContext(container)
+
+        let payload = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Checking",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: 100,
+                balanceDate: .now,
+                transactions: [
+                    RemoteTransactionSnapshot(
+                        externalID: "t1",
+                        amount: -20,
+                        postedDate: Date(timeIntervalSince1970: 1_700_000_000),
+                        description: "Coffee",
+                        suggestedCategoryID: SystemCategory.dining.id
+                    ),
+                ]
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: payload, into: context)
+
+        let tag = try await tagRepo.create(name: "Japan Trip")
+        let page = try await txRepo.fetchPage(filter: .all, cursor: nil, limit: 50)
+        let id = try #require(page.items.first?.id)
+        try await txRepo.updateTags(transactionID: id, tagIDs: [tag.id])
+
+        let updatedPayload = RemoteSyncPayload(accounts: [
+            RemoteAccountSnapshot(
+                externalID: "a1",
+                name: "Checking",
+                institutionName: "Bank",
+                currencyCode: "USD",
+                balance: 90,
+                balanceDate: .now,
+                transactions: [
+                    RemoteTransactionSnapshot(
+                        externalID: "t1",
+                        amount: -25,
+                        postedDate: Date(timeIntervalSince1970: 1_700_000_100),
+                        description: "Coffee Shop",
+                        suggestedCategoryID: SystemCategory.groceries.id
+                    ),
+                ]
+            ),
+        ])
+        try SyncMergeEngine.merge(payload: updatedPayload, into: context)
+        let page2 = try await txRepo.fetchPage(filter: .all, cursor: nil, limit: 50)
+        let tx = try #require(page2.items.first)
+        #expect(tx.tagIDs == [tag.id])
+        #expect(tx.amount == -25)
+    }
+
     @Test("Keyset pagination returns stable pages")
     func keysetPagination() async throws {
         let container = try ModelContainerFactory.make(inMemory: true)

@@ -33,6 +33,12 @@ public actor LocalDataResetter {
             for transaction in orphans {
                 context.delete(transaction)
             }
+            // Tags are local labels tied to spend tracking — clear with accounts/txs.
+            let tags = try context.fetch(FetchDescriptor<TagEntity>())
+            for tag in tags {
+                tag.transactions = []
+                context.delete(tag)
+            }
             try context.save()
             try? snapshotStore.clear()
         } catch let error as CashFlowError {
@@ -58,6 +64,25 @@ public actor LocalDataResetter {
         } catch {
             throw CashFlowError.persistence(
                 message: "Couldn't clear categorization rules. \(error.localizedDescription)"
+            )
+        }
+    }
+
+    /// Removes all tags. Prefer `resetAll` for normal wipes; this is for orphan cleanup.
+    public func deleteAllTags() async throws {
+        let context = ModelContext(modelContainer)
+        do {
+            let tags = try context.fetch(FetchDescriptor<TagEntity>())
+            for tag in tags {
+                tag.transactions = []
+                context.delete(tag)
+            }
+            try context.save()
+        } catch let error as CashFlowError {
+            throw error
+        } catch {
+            throw CashFlowError.persistence(
+                message: "Couldn't clear tags. \(error.localizedDescription)"
             )
         }
     }

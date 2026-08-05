@@ -29,6 +29,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let isPending: Bool
     /// When true, user categorization rules never change this transaction’s category.
     public let categoryLocked: Bool
+    /// Local-only user tags; sync never invents or clears these.
+    public let tagIDs: [TagID]
 
     public init(
         id: TransactionID,
@@ -41,7 +43,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         currencyCode: String = "USD",
         userEditedCategory: Bool = false,
         isPending: Bool = false,
-        categoryLocked: Bool = false
+        categoryLocked: Bool = false,
+        tagIDs: [TagID] = []
     ) {
         self.id = id
         self.accountID = accountID
@@ -54,6 +57,7 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         self.userEditedCategory = userEditedCategory
         self.isPending = isPending
         self.categoryLocked = categoryLocked
+        self.tagIDs = tagIDs
     }
 
     public var category: Category {

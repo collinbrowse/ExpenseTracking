@@ -9,11 +9,15 @@ public enum CashFlowDateRange: Hashable, Sendable {
     public func interval(calendar: Calendar = .current, now: Date = .now) -> DateInterval {
         switch self {
         case .month(let date):
+            // Month-to-date when `date` is in the current month; otherwise the full month.
             let start = calendar.date(from: calendar.dateComponents([.year, .month], from: date))
                 ?? date
-            let end = calendar.date(byAdding: DateComponents(month: 1, second: -1), to: start)
+            let endOfMonth = calendar.date(byAdding: DateComponents(month: 1, second: -1), to: start)
                 ?? date
-            return DateInterval(start: start, end: end)
+            let end = calendar.isDate(date, equalTo: now, toGranularity: .month)
+                ? min(endOfMonth, now)
+                : endOfMonth
+            return DateInterval(start: start, end: max(start, end))
         case .last30Days:
             let start = calendar.date(byAdding: .day, value: -30, to: now) ?? now
             return DateInterval(start: start, end: now)

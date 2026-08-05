@@ -10,12 +10,14 @@ final class DependencyContainer {
     let accountRepository: any AccountRepository
     let categorizationRuleRepository: any CategorizationRuleRepository
     let categorizationRuleApplying: any CategorizationRuleApplying
+    let tagRepository: any TagRepository
     let bankLinking: CompositeBankLinkingService
     let syncServing: SyncCoordinator
     let connectionLifecycle: any ConnectionLifecycleServing
     let resetter: LocalDataResetter
     let connectivity: ConnectivityMonitor
     let calculateNetCashFlow: CalculateNetCashFlowUseCase
+    let calculateSpendingBreakdown: CalculateSpendingBreakdownUseCase
     let appLockPreferences: any AppLockPreferencesStoring
     let deviceAuthentication: any DeviceAuthenticationServing
     let useLargeDemoSeed: Bool
@@ -57,6 +59,7 @@ final class DependencyContainer {
         self.categorizationRuleApplying = CategorizationRuleReapplier(
             modelContainer: modelContainer
         )
+        self.tagRepository = SwiftDataTagRepository(modelContainer: modelContainer)
         let demo = DemoBankLinkingService(
             seedSize: largeDemoSeed ? .large : .standard
         )
@@ -82,6 +85,7 @@ final class DependencyContainer {
         )
         self.connectivity = ConnectivityMonitor()
         self.calculateNetCashFlow = CalculateNetCashFlowUseCase()
+        self.calculateSpendingBreakdown = CalculateSpendingBreakdownUseCase()
         self.appLockPreferences = UserDefaultsAppLockPreferencesStore()
         self.deviceAuthentication = LocalAuthenticationDeviceAuthenticator()
     }

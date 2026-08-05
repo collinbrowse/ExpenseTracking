@@ -3,6 +3,8 @@ import CashFlowKit
 
 struct TransactionsView: View {
     @Bindable var viewModel: TransactionsViewModel
+    @State private var editorDetent: PresentationDetent = .large
+    @State private var isComposingTag = false
 
     var body: some View {
         List {
@@ -106,6 +108,8 @@ struct TransactionsView: View {
             set: { if !$0 { viewModel.selectedTransactionID = nil } }
         )) {
             editorSheet
+                .presentationDetents([.medium, .large], selection: $editorDetent)
+                .onAppear { editorDetent = .large }
         }
     }
 
@@ -165,6 +169,7 @@ struct TransactionsView: View {
         case .account: "Account: \(chip.label)"
         case .date: "Date: \(chip.label)"
         case .category: "Category: \(chip.label)"
+        case .tag: "Tag: \(chip.label)"
         }
     }
 
@@ -204,6 +209,16 @@ struct TransactionsView: View {
                     }
                     .accessibilityIdentifier("transactions.filter.category")
                 }
+
+                Section("Tag") {
+                    Picker("Tag", selection: $viewModel.filterTagID) {
+                        Text("All").tag(Optional<TagID>.none)
+                        ForEach(viewModel.tags) { tag in
+                            Text(tag.name).tag(Optional(tag.id))
+                        }
+                    }
+                    .accessibilityIdentifier("transactions.filter.tag")
+                }
             }
             .navigationTitle("Filters")
             .toolbar {
@@ -239,14 +254,50 @@ struct TransactionsView: View {
 
                     Toggle("Lock category", isOn: $viewModel.editingCategoryLocked)
                         .accessibilityIdentifier("transactions.editor.lock")
+                } footer: {
+                    Text("When locked, rules won’t change this transaction’s category. Rename rules can still update the title.")
+                }
 
+                Section("Tags") {
+                    TagChipScroller(
+                        items: viewModel.tags.map {
+                            TagChipScroller.Item(
+                                id: $0.id,
+                                title: $0.name,
+                                isSelected: viewModel.editingTagIDs.contains($0.id),
+                                accessibilityKey: $0.id.rawValue
+                            )
+                        },
+                        isComposing: isComposingTag,
+                        draftName: $viewModel.newTagName,
+                        onSelect: { viewModel.toggleEditingTag($0) },
+                        onBeginCompose: { isComposingTag = true },
+                        onSubmitCompose: {
+                            Task {
+                                await viewModel.createTagFromEditor()
+                                if viewModel.newTagName
+                                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                                    .isEmpty
+                                {
+                                    isComposingTag = false
+                                }
+                            }
+                        },
+                        onCancelCompose: {
+                            isComposingTag = false
+                            viewModel.newTagName = ""
+                        },
+                        accessibilityPrefix: "transactions.editor.tag"
+                    )
+                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                }
+
+                Section {
                     Button("Create Rule…") {
                         viewModel.presentCreateRule()
                     }
                     .disabled(viewModel.isSavingEdits)
                     .accessibilityIdentifier("transactions.editor.createRule")
-                } footer: {
-                    Text("When locked, rules won’t change this transaction’s category. Rename rules can still update the title.")
                 }
 
                 if !viewModel.matchingRules.isEmpty {
@@ -359,7 +410,6 @@ struct TransactionsView: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
     }
 }
 
@@ -390,6 +440,16 @@ private struct TransactionRowView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if !row.tagChipLabels.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(row.tagChipLabels, id: \.self) { label in
+                            TagChip(title: label, kind: .row)
+                        }
+                    }
+                    .padding(.top, 1)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Tags \(row.tagChipLabels.joined(separator: ", "))")
+                }
             }
 
             Spacer(minLength: 8)

@@ -11,6 +11,13 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
     let categoryText: String
     let categoryID: CategoryID
     let categoryLocked: Bool
+    let tagIDs: [TagID]
+    /// Chip labels for the row (up to two names, then optional “+N”).
+    let tagChipLabels: [String]
+    /// Joined labels for search.
+    var tagText: String? {
+        tagChipLabels.isEmpty ? nil : tagChipLabels.joined(separator: " ")
+    }
     let dateText: String
     let amountText: String
     let amountIsIncome: Bool
@@ -23,7 +30,12 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
     let sectionKey: String
     let sectionTitle: String
 
-    init(transaction: Transaction, accountName: String, calendar: Calendar = .current) {
+    init(
+        transaction: Transaction,
+        accountName: String,
+        tagNamesByID: [TagID: String] = [:],
+        calendar: Calendar = .current
+    ) {
         let parsed = ParseTransactionDescriptionUseCase.execute(transaction.description)
         self.id = transaction.id
         self.accountID = transaction.accountID
@@ -32,6 +44,11 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
         self.categoryText = transaction.category.name
         self.categoryID = transaction.categoryID
         self.categoryLocked = transaction.categoryLocked
+        self.tagIDs = transaction.tagIDs
+        self.tagChipLabels = Self.formatTagChipLabels(
+            tagIDs: transaction.tagIDs,
+            names: tagNamesByID
+        )
         // Pending rows live under a dedicated section header; show the authorization date here.
         self.dateText = DateFormatting.list(transaction.postedDate)
         self.accountName = accountName
@@ -73,8 +90,11 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
     func replacing(
         description: String,
         categoryID: CategoryID,
-        categoryLocked: Bool
+        categoryLocked: Bool,
+        tagIDs: [TagID]? = nil,
+        tagNamesByID: [TagID: String] = [:]
     ) -> TransactionRowModel {
+        let resolvedTags = tagIDs ?? self.tagIDs
         let transaction = Transaction(
             id: id,
             accountID: accountID,
@@ -85,9 +105,23 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
             categoryID: categoryID,
             userEditedCategory: true,
             isPending: isPending,
-            categoryLocked: categoryLocked
+            categoryLocked: categoryLocked,
+            tagIDs: resolvedTags
         )
-        return TransactionRowModel(transaction: transaction, accountName: accountName)
+        return TransactionRowModel(
+            transaction: transaction,
+            accountName: accountName,
+            tagNamesByID: tagNamesByID
+        )
+    }
+
+    private static func formatTagChipLabels(tagIDs: [TagID], names: [TagID: String]) -> [String] {
+        let resolved = tagIDs.compactMap { names[$0] }
+        guard !resolved.isEmpty else { return [] }
+        if resolved.count <= 2 {
+            return resolved
+        }
+        return [resolved[0], resolved[1], "+\(resolved.count - 2)"]
     }
 }
 

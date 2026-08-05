@@ -6,6 +6,7 @@ struct RootTabView: View {
     @State private var selectedTab: AppTab = .home
     @State private var homeViewModel: HomeViewModel
     @State private var transactionsViewModel: TransactionsViewModel
+    @State private var insightsViewModel: InsightsViewModel
     @State private var accountsViewModel: AccountsViewModel
     @State private var appLockViewModel: AppLockViewModel
 
@@ -23,9 +24,18 @@ struct RootTabView: View {
             initialValue: TransactionsViewModel(
                 transactionRepository: container.transactionRepository,
                 accountRepository: container.accountRepository,
+                tagRepository: container.tagRepository,
                 syncServing: container.syncServing,
                 ruleRepository: container.categorizationRuleRepository,
                 ruleApplying: container.categorizationRuleApplying
+            )
+        )
+        _insightsViewModel = State(
+            initialValue: InsightsViewModel(
+                transactionRepository: container.transactionRepository,
+                tagRepository: container.tagRepository,
+                syncServing: container.syncServing,
+                calculateSpendingBreakdown: container.calculateSpendingBreakdown
             )
         )
         _accountsViewModel = State(
@@ -57,6 +67,26 @@ struct RootTabView: View {
             }
             .tabItem { Label("Transactions", systemImage: "list.bullet") }
             .tag(AppTab.transactions)
+
+            NavigationStack {
+                InsightsView(
+                    viewModel: insightsViewModel,
+                    onViewTransactions: { categoryID, tagID, dateOption, start, end in
+                        Task {
+                            await transactionsViewModel.focusInsights(
+                                categoryID: categoryID,
+                                tagID: tagID,
+                                dateOption: dateOption,
+                                customStart: start,
+                                customEnd: end
+                            )
+                            selectedTab = .transactions
+                        }
+                    }
+                )
+            }
+            .tabItem { Label("Insights", systemImage: "chart.pie") }
+            .tag(AppTab.insights)
 
             NavigationStack {
                 AccountsView(viewModel: accountsViewModel) { accountID in
@@ -140,11 +170,20 @@ struct RootTabView: View {
             Task {
                 await homeViewModel.reload(preferLoadingIndicator: !homeViewModel.hasData)
                 await transactionsViewModel.resetAndLoad()
+                await insightsViewModel.reload(preferLoadingIndicator: false)
             }
         }
         .onChange(of: selectedTab) { _, tab in
-            if tab == .home {
+            switch tab {
+            case .home:
                 Task { await homeViewModel.reload(preferLoadingIndicator: false) }
+            case .accounts:
+                // Home / Transactions sync can update durable syncIssue while this tab is idle.
+                Task { await accountsViewModel.refreshStatus() }
+            case .insights:
+                Task { await insightsViewModel.reload(preferLoadingIndicator: false) }
+            case .transactions:
+                Task { await transactionsViewModel.refreshTagsIfNeeded() }
             }
         }
         .overlay {

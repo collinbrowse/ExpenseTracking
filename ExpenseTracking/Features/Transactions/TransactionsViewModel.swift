@@ -8,6 +8,7 @@ struct ActiveFilterChip: Identifiable, Hashable, Sendable {
         case account
         case date
         case category
+        case tag
     }
 
     var id: Kind { kind }
@@ -20,15 +21,18 @@ struct ActiveFilterChip: Identifiable, Hashable, Sendable {
 final class TransactionsViewModel {
     private let transactionRepository: any TransactionRepository
     private let accountRepository: any AccountRepository
+    private let tagRepository: any TagRepository
     private let syncServing: any SyncServing
     private let ruleRepository: any CategorizationRuleRepository
     private let ruleApplying: any CategorizationRuleApplying
 
     var rows: [TransactionRowModel] = []
     var accounts: [Account] = []
+    var tags: [CashFlowKit.Tag] = []
     var searchText = ""
     var filterAccountID: AccountID?
     var filterCategoryID: CategoryID?
+    var filterTagID: TagID?
     var filterDateOption: TransactionDateFilterOption = .all
     var customStart: Date = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
     var customEnd: Date = .now
@@ -41,8 +45,10 @@ final class TransactionsViewModel {
     var editingDescription = ""
     var editingCategoryID: CategoryID = SystemCategory.other.id
     var editingCategoryLocked = false
+    var editingTagIDs: Set<TagID> = []
     var editingAccountName = ""
     var editingLocation: String?
+    var newTagName = ""
     var matchingRules: [CategorizationRule] = []
     var showRuleEditor = false
     var ruleEditor: CategorizationRuleEditorViewModel?
@@ -51,17 +57,20 @@ final class TransactionsViewModel {
     private var cursor: TransactionCursor?
     private var loadTask: Task<Void, Never>?
     private var accountNames: [AccountID: String] = [:]
+    private var tagNames: [TagID: String] = [:]
     private var matchingRulesTask: Task<Void, Never>?
 
     init(
         transactionRepository: any TransactionRepository,
         accountRepository: any AccountRepository,
+        tagRepository: any TagRepository,
         syncServing: any SyncServing,
         ruleRepository: any CategorizationRuleRepository,
         ruleApplying: any CategorizationRuleApplying
     ) {
         self.transactionRepository = transactionRepository
         self.accountRepository = accountRepository
+        self.tagRepository = tagRepository
         self.syncServing = syncServing
         self.ruleRepository = ruleRepository
         self.ruleApplying = ruleApplying
@@ -74,7 +83,8 @@ final class TransactionsViewModel {
                 customStart: customStart,
                 customEnd: customEnd
             ),
-            categoryID: filterCategoryID
+            categoryID: filterCategoryID,
+            tagID: filterTagID
         )
     }
 
@@ -108,6 +118,16 @@ final class TransactionsViewModel {
                 )
             )
         }
+        if let filterTagID {
+            chips.append(
+                ActiveFilterChip(
+                    kind: .tag,
+                    label: tagNames[filterTagID]
+                        ?? tags.first(where: { $0.id == filterTagID })?.name
+                        ?? "Tag"
+                )
+            )
+        }
         return chips
     }
 
@@ -118,6 +138,7 @@ final class TransactionsViewModel {
             row.title.localizedCaseInsensitiveContains(query)
                 || row.location?.localizedCaseInsensitiveContains(query) == true
                 || row.categoryText.localizedCaseInsensitiveContains(query)
+                || row.tagText?.localizedCaseInsensitiveContains(query) == true
                 || row.accountName.localizedCaseInsensitiveContains(query)
                 || TransactionAmountSearch.matches(query, amountText: row.amountText)
         }
@@ -156,8 +177,14 @@ final class TransactionsViewModel {
         return result
     }
 
+    private var hasLoadedOnce = false
+
     func onAppear() async {
         await refreshAccounts()
+        await refreshTags()
+        // Avoid resetting the list (and scroll position) every time the tab reappears.
+        guard !hasLoadedOnce else { return }
+        hasLoadedOnce = true
         await resetAndLoad()
     }
 
@@ -170,8 +197,31 @@ final class TransactionsViewModel {
     func focusAccount(_ accountID: AccountID) async {
         filterAccountID = accountID
         filterCategoryID = nil
+        filterTagID = nil
         filterDateOption = .all
         await refreshAccounts()
+        await refreshTags()
+        hasLoadedOnce = true
+        await resetAndLoad()
+    }
+
+    /// Opens the list from Insights with optional category and/or tag (AND) plus date range.
+    func focusInsights(
+        categoryID: CategoryID?,
+        tagID: TagID?,
+        dateOption: TransactionDateFilterOption,
+        customStart: Date,
+        customEnd: Date
+    ) async {
+        filterAccountID = nil
+        filterCategoryID = categoryID
+        filterTagID = tagID
+        filterDateOption = dateOption
+        self.customStart = customStart
+        self.customEnd = customEnd
+        await refreshAccounts()
+        await refreshTags()
+        hasLoadedOnce = true
         await resetAndLoad()
     }
 
@@ -183,6 +233,8 @@ final class TransactionsViewModel {
             filterDateOption = .all
         case .category:
             filterCategoryID = nil
+        case .tag:
+            filterTagID = nil
         }
         await resetAndLoad()
     }
@@ -190,11 +242,13 @@ final class TransactionsViewModel {
     func clearAllFilters() async {
         filterAccountID = nil
         filterCategoryID = nil
+        filterTagID = nil
         filterDateOption = .all
         await resetAndLoad()
     }
 
     func resetAndLoad() async {
+        hasLoadedOnce = true
         loadTask?.cancel()
         rows = []
         cursor = nil
@@ -224,7 +278,8 @@ final class TransactionsViewModel {
             let mapped = page.items.map { tx in
                 TransactionRowModel(
                     transaction: tx,
-                    accountName: accountNames[tx.accountID] ?? "Account"
+                    accountName: accountNames[tx.accountID] ?? "Account",
+                    tagNamesByID: tagNames
                 )
             }
             rows.append(contentsOf: mapped)
@@ -243,19 +298,61 @@ final class TransactionsViewModel {
             bannerMessage = "Couldn't refresh. Showing last saved data."
         }
         await refreshAccounts()
+        await refreshTags()
         await resetAndLoad()
     }
 
     func openEditor(for id: TransactionID) {
         selectedTransactionID = id
+        newTagName = ""
         if let row = rows.first(where: { $0.id == id }) {
             editingDescription = row.title
             editingCategoryID = row.categoryID
             editingCategoryLocked = row.categoryLocked
+            editingTagIDs = Set(row.tagIDs)
             editingAccountName = row.accountName
             editingLocation = row.location
         }
-        Task { await refreshMatchingRules() }
+        Task {
+            // Load tags before matching rules so the Tags section is populated
+            // when the medium detent sheet appears.
+            await refreshTags()
+            await refreshMatchingRules()
+        }
+    }
+
+    /// Call when the Transactions tab becomes active so newly created Insights tags appear.
+    func refreshTagsIfNeeded() async {
+        await refreshTags()
+    }
+
+    func toggleEditingTag(_ tagID: TagID) {
+        if editingTagIDs.contains(tagID) {
+            editingTagIDs.remove(tagID)
+        } else {
+            editingTagIDs.insert(tagID)
+        }
+    }
+
+    func createTagFromEditor() async {
+        let name = newTagName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        do {
+            let tag = try await tagRepository.create(name: name)
+            newTagName = ""
+            await refreshTags()
+            // Ensure the new tag is visible even if fetch is briefly stale.
+            if !tags.contains(where: { $0.id == tag.id }) {
+                tags.append(tag)
+                tags.sort {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+                tagNames[tag.id] = tag.name
+            }
+            editingTagIDs.insert(tag.id)
+        } catch {
+            bannerMessage = "Couldn't create tag."
+        }
     }
 
     func presentCreateRule() {
@@ -291,6 +388,7 @@ final class TransactionsViewModel {
             editingDescription = row.title
             editingCategoryID = row.categoryID
             editingCategoryLocked = row.categoryLocked
+            editingTagIDs = Set(row.tagIDs)
             editingAccountName = row.accountName
             editingLocation = row.location
         }
@@ -369,6 +467,7 @@ final class TransactionsViewModel {
         )
         let newCategoryID = editingCategoryID
         let locked = editingCategoryLocked
+        let newTagIDs = Array(editingTagIDs).sorted { $0.rawValue < $1.rawValue }
         isSavingEdits = true
         defer { isSavingEdits = false }
         do {
@@ -381,11 +480,19 @@ final class TransactionsViewModel {
                 transactionID: id,
                 description: storedDescription
             )
+            try await transactionRepository.updateTags(
+                transactionID: id,
+                tagIDs: newTagIDs
+            )
             selectedTransactionID = nil
             editingLocation = nil
 
-            // Category filter no longer matches — drop just this row.
+            // Active filters no longer match — drop just this row.
             if let filterCategoryID, filterCategoryID != newCategoryID {
+                rows.remove(at: index)
+                return
+            }
+            if let filterTagID, !newTagIDs.contains(filterTagID) {
                 rows.remove(at: index)
                 return
             }
@@ -393,7 +500,9 @@ final class TransactionsViewModel {
             rows[index] = rows[index].replacing(
                 description: storedDescription,
                 categoryID: newCategoryID,
-                categoryLocked: locked
+                categoryLocked: locked,
+                tagIDs: newTagIDs,
+                tagNamesByID: tagNames
             )
         } catch {
             bannerMessage = "Couldn't save changes."
@@ -408,6 +517,18 @@ final class TransactionsViewModel {
             )
         } catch {
             accounts = []
+        }
+    }
+
+    func refreshTags() async {
+        do {
+            tags = try await tagRepository.fetchAll()
+            tagNames = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0.name) })
+        } catch {
+            // Keep prior tags on transient fetch failure so editor doesn't go empty.
+            if tags.isEmpty {
+                tagNames = [:]
+            }
         }
     }
 }

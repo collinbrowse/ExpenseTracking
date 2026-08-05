@@ -24,9 +24,7 @@ struct HomeView: View {
 
                 Picker("Range", selection: Binding(
                     get: { viewModel.selectedOption },
-                    set: { newValue in
-                        Task { await viewModel.selectOption(newValue) }
-                    }
+                    set: { viewModel.selectOption($0) }
                 )) {
                     ForEach(viewModel.availableRangeOptions) { option in
                         Text(option.title).tag(option)
@@ -69,7 +67,7 @@ struct HomeView: View {
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Apply") {
-                            Task { await viewModel.applyCustomRange() }
+                            viewModel.applyCustomRange()
                         }
                     }
                 }
@@ -104,6 +102,13 @@ struct HomeView: View {
         .accessibilityIdentifier("home.empty")
     }
 
+    private var emptyRangeHint: some View {
+        Text("No posted activity in this range.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("home.emptyRange")
+    }
+
     private var populatedContent: some View {
         VStack(alignment: .leading, spacing: Theme.sectionSpacing) {
             VStack(alignment: .leading, spacing: 8) {
@@ -122,6 +127,10 @@ struct HomeView: View {
                 HStack(spacing: 16) {
                     labeledAmount("In", viewModel.result.incomeTotal, positive: true)
                     labeledAmount("Out", viewModel.result.expenseTotal, positive: false)
+                }
+
+                if !viewModel.hasData {
+                    emptyRangeHint
                 }
             }
 
