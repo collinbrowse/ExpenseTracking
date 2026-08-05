@@ -1,7 +1,8 @@
 import Foundation
 
 /// Domain merge policy: remote wins amount/date; lock / user rules / user edit gate category;
-/// matching rename rules override description; sticky category also keeps a prior local title.
+/// matching rename rules override description; sticky category also keeps a prior local title;
+/// rule tags are additive and honor per-tag suppressions.
 public enum MergeSyncPolicy: Sendable {
     public static func merge(
         local: Transaction?,
@@ -10,9 +11,7 @@ public enum MergeSyncPolicy: Sendable {
     ) -> Transaction {
         guard let local else {
             let resolved = ResolveTransactionCategoryUseCase.execute(
-                description: remote.description,
-                amount: remote.amount,
-                accountID: remote.accountID,
+                transaction: remote,
                 rules: rules,
                 categoryLocked: false,
                 currentCategoryID: remote.categoryID,
@@ -34,7 +33,14 @@ public enum MergeSyncPolicy: Sendable {
                 userEditedCategory: resolved.matchedUserRule,
                 isPending: remote.isPending,
                 categoryLocked: false,
-                tagIDs: []
+                tagIDs: ResolveTransactionCategoryUseCase.applyingTags(
+                    current: [],
+                    ruleTags: resolved.tagIDsToAdd,
+                    suppressed: []
+                ),
+                suppressedTagIDs: [],
+                enrichedTitle: nil,
+                enrichedLocation: nil
             )
         }
 
@@ -42,20 +48,36 @@ public enum MergeSyncPolicy: Sendable {
         let userEdited: Bool
         let locked = local.categoryLocked
         let description: String
+        let matchBase = Transaction(
+            id: local.id,
+            accountID: remote.accountID,
+            externalID: remote.externalID,
+            amount: remote.amount,
+            postedDate: remote.postedDate,
+            description: remote.description,
+            categoryID: local.categoryID,
+            currencyCode: remote.currencyCode,
+            userEditedCategory: local.userEditedCategory,
+            isPending: remote.isPending,
+            categoryLocked: locked,
+            tagIDs: local.tagIDs,
+            suppressedTagIDs: local.suppressedTagIDs,
+            enrichedTitle: local.enrichedTitle,
+            enrichedLocation: local.enrichedLocation
+        )
 
+        let resolved: ResolvedCategory
         if locked {
-            categoryID = local.categoryID
-            userEdited = local.userEditedCategory
-            // Lock blocks category only — rename rules still rewrite the title.
-            let resolved = ResolveTransactionCategoryUseCase.execute(
-                description: remote.description,
-                amount: remote.amount,
-                accountID: remote.accountID,
+            resolved = ResolveTransactionCategoryUseCase.execute(
+                transaction: matchBase,
                 rules: rules,
                 categoryLocked: true,
                 currentCategoryID: local.categoryID,
                 fallbackCategoryID: remote.categoryID
             )
+            categoryID = local.categoryID
+            userEdited = local.userEditedCategory
+            // Lock blocks category only — rename rules still rewrite the title.
             if let renameTitle = resolved.renameTitle {
                 description = renamedDescription(
                     from: remote.description,
@@ -65,10 +87,8 @@ public enum MergeSyncPolicy: Sendable {
                 description = local.description
             }
         } else {
-            let resolved = ResolveTransactionCategoryUseCase.execute(
-                description: remote.description,
-                amount: remote.amount,
-                accountID: remote.accountID,
+            resolved = ResolveTransactionCategoryUseCase.execute(
+                transaction: matchBase,
                 rules: rules,
                 categoryLocked: false,
                 currentCategoryID: local.categoryID,
@@ -100,6 +120,13 @@ public enum MergeSyncPolicy: Sendable {
             }
         }
 
+        // Keep enrichment only when the stored description is unchanged.
+        let keepEnrichment = description == local.description
+        let tagIDs = ResolveTransactionCategoryUseCase.applyingTags(
+            current: local.tagIDs,
+            ruleTags: resolved.tagIDsToAdd,
+            suppressed: local.suppressedTagIDs
+        )
         return Transaction(
             id: local.id,
             accountID: remote.accountID,
@@ -112,7 +139,10 @@ public enum MergeSyncPolicy: Sendable {
             userEditedCategory: userEdited,
             isPending: remote.isPending,
             categoryLocked: locked,
-            tagIDs: local.tagIDs
+            tagIDs: tagIDs,
+            suppressedTagIDs: local.suppressedTagIDs,
+            enrichedTitle: keepEnrichment ? local.enrichedTitle : nil,
+            enrichedLocation: keepEnrichment ? local.enrichedLocation : nil
         )
     }
 

@@ -27,6 +27,8 @@ public actor SwiftDataCategorizationRuleRepository: CategorizationRuleRepository
         var descriptor = FetchDescriptor<CategorizationRuleEntity>(predicate: predicate)
         descriptor.fetchLimit = 1
         let data = try EntityMappers.encodeConditions(rule.conditions)
+        let tagData = try EntityMappers.encodeTagIDs(rule.tagIDs)
+        let snapshotData = try EntityMappers.encodeApplySnapshot(rule.applySnapshot)
 
         if let existing = try context.fetch(descriptor).first {
             existing.categoryID = rule.categoryID.rawValue
@@ -35,6 +37,10 @@ public actor SwiftDataCategorizationRuleRepository: CategorizationRuleRepository
             existing.conditionsData = data
             existing.renameTitle = rule.renameTitle
             existing.appliesCategory = rule.appliesCategory
+            existing.tagIDsData = tagData
+            // Preserve provenance when editing an assistant-created rule.
+            existing.createdByAssistant = existing.createdByAssistant || rule.createdByAssistant
+            existing.applySnapshotData = snapshotData
         } else {
             context.insert(
                 CategorizationRuleEntity(
@@ -44,7 +50,10 @@ public actor SwiftDataCategorizationRuleRepository: CategorizationRuleRepository
                     isEnabled: rule.isEnabled,
                     conditionsData: data,
                     renameTitle: rule.renameTitle,
-                    appliesCategory: rule.appliesCategory
+                    appliesCategory: rule.appliesCategory,
+                    tagIDsData: tagData,
+                    createdByAssistant: rule.createdByAssistant,
+                    applySnapshotData: snapshotData
                 )
             )
         }

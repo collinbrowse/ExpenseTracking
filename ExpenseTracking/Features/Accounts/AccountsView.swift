@@ -32,14 +32,18 @@ struct AccountsView: View {
 
             Section("Connection") {
                 LabeledContent("Provider", value: viewModel.connection.providerName)
-                LabeledContent(
-                    "Status",
-                    value: viewModel.connection.isLinked
-                        ? (viewModel.connection.needsReauth ? "Reconnect required" : "Linked")
-                        : "Not linked"
-                )
+                LabeledContent("Status", value: viewModel.connectionStatusLabel)
+                    .accessibilityIdentifier("accounts.connectionStatus")
                 if let synced = viewModel.connection.lastSuccessfulSyncAt {
                     LabeledContent("Last sync", value: DateFormatting.medium(synced))
+                }
+                if viewModel.hasAccountSyncIssues {
+                    Text(
+                        "One or more accounts didn’t sync cleanly. Try Sync Now after fixing the bank connection at SimpleFIN Bridge, or reconnect with a new token."
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("accounts.syncIssueGuidance")
                 }
 
                 Button("Sync Now") {
@@ -60,7 +64,7 @@ struct AccountsView: View {
                     }
                     .disabled(viewModel.isWorking)
                     .accessibilityIdentifier("accounts.demo")
-                } else if viewModel.connection.needsReauth {
+                } else if viewModel.showsReconnectAction {
                     Button("Reconnect SimpleFIN…") {
                         viewModel.beginLinkFlow()
                     }

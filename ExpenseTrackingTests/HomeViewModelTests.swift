@@ -164,7 +164,16 @@ private struct MockTransactionRepository: TransactionRepository {
     func updateDescription(transactionID: TransactionID, description: String) async throws {}
     func updateTags(transactionID: TransactionID, tagIDs: [TagID]) async throws {}
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {}
+    func applyTagAssignments(_ assignments: [TagAssignment]) async throws {}
+    func updateEnrichment(
+        transactionID: TransactionID,
+        title: String,
+        location: String?
+    ) async throws {}
     func fetchAllForCategorization() async throws -> [Transaction] { transactions }
+    func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction] {
+        Array(transactions.filter { $0.enrichedTitle == nil }.prefix(limit))
+    }
 }
 
 private struct MockSyncServing: SyncServing {

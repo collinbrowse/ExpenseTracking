@@ -303,8 +303,18 @@ public struct SimpleFINClient: Sendable {
             let matches: Bool
             if !accountID.isEmpty {
                 matches = accountID == account.externalID
+                    || messageMatchesAccountIdentity(
+                        message,
+                        name: account.name,
+                        institutionName: account.institutionName
+                    )
             } else if !connID.isEmpty {
                 matches = connID == account.connectionExternalID
+                    || messageMatchesAccountIdentity(
+                        message,
+                        name: account.name,
+                        institutionName: account.institutionName
+                    )
             } else {
                 // Unscoped provider errors apply to every account in the payload.
                 matches = true
@@ -316,6 +326,24 @@ public struct SimpleFINClient: Sendable {
             messages.append(message)
         }
         return messages
+    }
+
+    /// Bridge errlist copy often names the FI/account even when ids are missing or stale.
+    static func messageMatchesAccountIdentity(
+        _ message: String,
+        name: String,
+        institutionName: String
+    ) -> Bool {
+        let haystack = message.lowercased()
+        let candidates = [name, institutionName]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 3 }
+        for candidate in candidates {
+            if haystack.contains(candidate.lowercased()) {
+                return true
+            }
+        }
+        return false
     }
 
     private func mapAccount(

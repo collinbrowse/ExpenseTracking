@@ -36,11 +36,10 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
         tagNamesByID: [TagID: String] = [:],
         calendar: Calendar = .current
     ) {
-        let parsed = ParseTransactionDescriptionUseCase.execute(transaction.description)
         self.id = transaction.id
         self.accountID = transaction.accountID
-        self.title = parsed.title
-        self.location = parsed.location
+        self.title = transaction.displayTitle
+        self.location = transaction.displayLocation
         self.categoryText = transaction.category.name
         self.categoryID = transaction.categoryID
         self.categoryLocked = transaction.categoryLocked
@@ -106,7 +105,9 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
             userEditedCategory: true,
             isPending: isPending,
             categoryLocked: categoryLocked,
-            tagIDs: resolvedTags
+            tagIDs: resolvedTags,
+            enrichedTitle: nil,
+            enrichedLocation: nil
         )
         return TransactionRowModel(
             transaction: transaction,

@@ -18,6 +18,7 @@ enum EntityMappers {
     static func transaction(from entity: TransactionEntity) -> Transaction {
         let resolvedAccountID = entity.account?.id ?? entity.accountID
         let tagIDs = entity.tags.map { TagID($0.id) }.sorted { $0.rawValue < $1.rawValue }
+        let suppressed = decodeTagIDs(entity.suppressedTagIDsData)
         return Transaction(
             id: TransactionID(entity.id),
             accountID: AccountID(resolvedAccountID),
@@ -30,7 +31,10 @@ enum EntityMappers {
             userEditedCategory: entity.userEditedCategory,
             isPending: entity.isPending,
             categoryLocked: entity.categoryLocked,
-            tagIDs: tagIDs
+            tagIDs: tagIDs,
+            suppressedTagIDs: suppressed,
+            enrichedTitle: entity.enrichedTitle,
+            enrichedLocation: entity.enrichedLocation
         )
     }
 
@@ -54,11 +58,34 @@ enum EntityMappers {
             isEnabled: entity.isEnabled,
             conditions: conditions,
             renameTitle: entity.renameTitle,
-            appliesCategory: entity.appliesCategory
+            appliesCategory: entity.appliesCategory,
+            tagIDs: decodeTagIDs(entity.tagIDsData),
+            createdByAssistant: entity.createdByAssistant,
+            applySnapshot: decodeApplySnapshot(entity.applySnapshotData)
         )
     }
 
     static func encodeConditions(_ conditions: [CategorizationCondition]) throws -> Data {
         try JSONEncoder().encode(conditions)
+    }
+
+    static func encodeTagIDs(_ tagIDs: [TagID]) throws -> Data? {
+        guard !tagIDs.isEmpty else { return nil }
+        return try JSONEncoder().encode(tagIDs)
+    }
+
+    static func decodeTagIDs(_ data: Data?) -> [TagID] {
+        guard let data else { return [] }
+        return (try? JSONDecoder().decode([TagID].self, from: data)) ?? []
+    }
+
+    static func encodeApplySnapshot(_ snapshot: CategorizationRuleApplySnapshot?) throws -> Data? {
+        guard let snapshot, snapshot.canUndo else { return nil }
+        return try JSONEncoder().encode(snapshot)
+    }
+
+    static func decodeApplySnapshot(_ data: Data?) -> CategorizationRuleApplySnapshot? {
+        guard let data else { return nil }
+        return try? JSONDecoder().decode(CategorizationRuleApplySnapshot.self, from: data)
     }
 }

@@ -220,7 +220,10 @@ final class InsightsViewModel {
             return
         } catch {
             guard generation == reloadGeneration else { return }
-            bannerMessage = "Couldn't load spending."
+            bannerMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't load spending."
+            )
         }
     }
 
@@ -262,7 +265,11 @@ final class InsightsViewModel {
             _ = try await syncServing.syncNow()
             bannerMessage = nil
         } catch {
-            bannerMessage = "Couldn't refresh. Showing last saved data."
+            let detail = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't refresh."
+            )
+            bannerMessage = "\(detail) Showing last saved data."
         }
         await reload(preferLoadingIndicator: false)
     }
@@ -285,7 +292,10 @@ final class InsightsViewModel {
             // Refresh charts without blocking tag list on spending fetch errors.
             await reloadBreakdownPreservingTags()
         } catch {
-            tagEditorError = "Couldn't create tag. \(error.localizedDescription)"
+            tagEditorError = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't create tag."
+            )
         }
     }
 
@@ -308,7 +318,10 @@ final class InsightsViewModel {
             tagEditorError = nil
             await reloadTagsAndBreakdown()
         } catch {
-            tagEditorError = "Couldn't rename tag."
+            tagEditorError = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't rename tag."
+            )
         }
     }
 
@@ -321,7 +334,10 @@ final class InsightsViewModel {
             tagEditorError = nil
             await reload(preferLoadingIndicator: false)
         } catch {
-            tagEditorError = "Couldn't delete tag."
+            tagEditorError = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't delete tag."
+            )
         }
     }
 

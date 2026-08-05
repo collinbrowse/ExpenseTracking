@@ -121,7 +121,7 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 | Edited description | Manual / rule titles stick when category is sticky (`userEditedCategory`) or locked; otherwise re-sync can overwrite from remote |
 | Home date fetch | Posted txs for the range; date scoping may finish in memory when SwiftData predicates are fragile |
 | App Group | Widget prefers `group.com.expensetracking.shared`; falls back if signing/team/group isn’t set up |
-| Settings | About + privacy + Categorization Rules + app lock |
+| Settings | About + privacy + Assistant + Categorization Rules + app lock |
 | Navigation helpers | `AppRouter` route enums exist but tabs use plain `NavigationStack`s |
 
 ## Deferred (not built)
@@ -130,14 +130,26 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 - CSV import, Plaid (or other aggregators requiring a backend)
 - Delete transaction API (forbidden for MVP)
 - Budgets, multi-currency, marketing screenshot pack
-- Auto-tagging rules / ML; tag date ranges or event budgets; splitting one amount across tags
+- Auto-tagging *rules* (deterministic); tag date ranges or event budgets; splitting one amount across tags
+- Private Cloud Compute / server models for the assistant
+
+### On-device intelligence (Foundation Models)
+
+- Apple **Foundation Models** (on-device) behind `SystemLanguageModel` availability; app targets **iOS 26+**
+- Post-sync enrichment writes local-only `enrichedTitle` / `enrichedLocation` (sync never invents these; cleared when description changes)
+- Display prefers enrichment cache, else heuristic `ParseTransactionDescriptionUseCase`
+- LLM category suggestions apply only to unlocked, non-rule-matched **Other** rows (`userEditedCategory: false`); rules + keywords remain the safety net
+- **Assistant** (Transactions toolbar + Settings): interprets intent into rule conditions, shows a preview with affected count, applies on Run (optional lasting rule; Undo from Rules → Edit Rule)
+- **Rule Undo**: Edit Rule sheet can undo the last apply for assistant and user rules; later manual edits win
+- When Apple Intelligence is off / ineligible / not ready, heuristics and rules continue unchanged
+
+Code: `CashFlowKit` ports + plan DTOs, `CashFlowData/Intelligence/`, `ExpenseTracking/Features/Assistant/`
 
 ### Categorization roadmap (remaining)
 
 **Phase 1 — User rules** — shipped (see Categorization above).
 
-**Phase 2 — On-device ML (experiment later)**  
-Explore on-device models (Create ML / Core ML) trained on the user’s corrections + rules, still fully on-device. Treat as a learning spike; keep rules + keyword fallback as the safety net. Do not block shipping on this.
+**Phase 2 — On-device Foundation Models** — shipped (see On-device intelligence above). Custom Create ML rankers remain out of scope.
 
 ## Demo happy path (manual)
 

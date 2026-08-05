@@ -12,6 +12,7 @@ public actor SyncCoordinator: SyncServing {
     private let modelContainer: ModelContainer
     private let bankLinking: CompositeBankLinkingService
     private let snapshotStore: NetSnapshotStore
+    private let enrichment: (any TransactionEnrichmentRunning)?
     private let logger = Logger(subsystem: "com.expensetracking", category: "sync")
 
     private var inFlight: Task<LinkedConnection, Error>?
@@ -19,11 +20,13 @@ public actor SyncCoordinator: SyncServing {
     public init(
         modelContainer: ModelContainer,
         bankLinking: CompositeBankLinkingService,
-        snapshotStore: NetSnapshotStore = NetSnapshotStore()
+        snapshotStore: NetSnapshotStore = NetSnapshotStore(),
+        enrichment: (any TransactionEnrichmentRunning)? = nil
     ) {
         self.modelContainer = modelContainer
         self.bankLinking = bankLinking
         self.snapshotStore = snapshotStore
+        self.enrichment = enrichment
     }
 
     /// Assembles UI status from credentials (Keychain / Demo session) + durable `ConnectionEntity`.
@@ -124,6 +127,11 @@ public actor SyncCoordinator: SyncServing {
             )
             try context.save()
             try writeNetSnapshot(context: context)
+
+            // Best-effort on-device enrichment; never fails the sync.
+            if let enrichment {
+                await enrichment.enrichAfterSync()
+            }
 
             return LinkedConnection(
                 isLinked: true,

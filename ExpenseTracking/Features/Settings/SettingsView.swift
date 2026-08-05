@@ -1,10 +1,39 @@
 import SwiftUI
+import CashFlowKit
 
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
+    @Bindable var accountsViewModel: AccountsViewModel
+    var onSelectAccount: (AccountID) -> Void = { _ in }
 
     var body: some View {
         List {
+            Section {
+                NavigationLink {
+                    AccountsView(
+                        viewModel: accountsViewModel,
+                        onSelectAccount: onSelectAccount
+                    )
+                } label: {
+                    Label("Accounts", systemImage: "building.columns")
+                }
+
+                NavigationLink {
+                    CategorizationRulesView(
+                        viewModel: CategorizationRulesViewModel(
+                            ruleRepository: viewModel.ruleRepository,
+                            ruleApplying: viewModel.ruleApplying,
+                            accountRepository: viewModel.accountRepository,
+                            tagRepository: viewModel.tagRepository,
+                            ruleDrafting: viewModel.ruleDrafting,
+                            availabilityChecker: viewModel.availabilityChecker
+                        )
+                    )
+                } label: {
+                    Label("Rules", systemImage: "list.bullet.rectangle")
+                }
+            }
+
             Section("Security") {
                 Toggle(viewModel.appLock.requireLockToggleTitle, isOn: viewModel.requireLockBinding)
                     .disabled(!viewModel.appLock.canAuthenticate && !viewModel.appLock.isEnabled)
@@ -23,20 +52,6 @@ struct SettingsView: View {
                     Text(message)
                         .font(.footnote)
                         .foregroundStyle(.red)
-                }
-            }
-
-            Section("Categorization") {
-                NavigationLink {
-                    CategorizationRulesView(
-                        viewModel: CategorizationRulesViewModel(
-                            ruleRepository: viewModel.ruleRepository,
-                            ruleApplying: viewModel.ruleApplying,
-                            accountRepository: viewModel.accountRepository
-                        )
-                    )
-                } label: {
-                    Text("Categorization Rules")
                 }
             }
 

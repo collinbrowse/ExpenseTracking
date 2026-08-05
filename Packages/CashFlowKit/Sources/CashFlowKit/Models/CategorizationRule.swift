@@ -22,6 +22,9 @@ public enum CategorizationCondition: Hashable, Sendable, Codable {
     case titleEquals(String)
     case descriptionContains(String)
     case descriptionEquals(String)
+    case locationContains(String)
+    case categoryIs(CategoryID)
+    case hasTag(TagID)
     case accountID(AccountID)
     case amountMin(Decimal)
     case amountMax(Decimal)
@@ -31,6 +34,7 @@ public enum CategorizationCondition: Hashable, Sendable, Codable {
 ///
 /// - Categorize rules: `appliesCategory == true` (optional rename via `renameTitle`)
 /// - Rename-only rules: `appliesCategory == false` and a non-nil `renameTitle`
+/// - Tag rules: non-empty `tagIDs` (additive; may combine with categorize/rename)
 public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
     public let id: CategorizationRuleID
     public let categoryID: CategoryID
@@ -39,8 +43,14 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
     public let conditions: [CategorizationCondition]
     /// When set, matching transactions get this merchant title (location preserved).
     public let renameTitle: String?
-    /// When false, a matching rule only renames and leaves category unchanged.
+    /// When false, a matching rule only renames / tags and leaves category unchanged.
     public let appliesCategory: Bool
+    /// Tags to add when the rule matches (never clears existing tags).
+    public let tagIDs: [TagID]
+    /// True when the assistant created this rule.
+    public let createdByAssistant: Bool
+    /// Prior transaction state from the last apply; enables Undo Rule.
+    public let applySnapshot: CategorizationRuleApplySnapshot?
 
     public init(
         id: CategorizationRuleID,
@@ -49,7 +59,10 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
         isEnabled: Bool = true,
         conditions: [CategorizationCondition],
         renameTitle: String? = nil,
-        appliesCategory: Bool = true
+        appliesCategory: Bool = true,
+        tagIDs: [TagID] = [],
+        createdByAssistant: Bool = false,
+        applySnapshot: CategorizationRuleApplySnapshot? = nil
     ) {
         self.id = id
         self.categoryID = categoryID
@@ -58,6 +71,40 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
         self.conditions = conditions
         self.renameTitle = Self.normalizedRename(renameTitle)
         self.appliesCategory = appliesCategory
+        self.tagIDs = tagIDs
+        self.createdByAssistant = createdByAssistant
+        self.applySnapshot = applySnapshot
+    }
+
+    /// True when the rule performs at least one lasting action.
+    public var hasAction: Bool {
+        appliesCategory || renameTitle != nil || !tagIDs.isEmpty
+    }
+
+    public var canUndoApply: Bool {
+        applySnapshot?.canUndo == true
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, categoryID, priority, isEnabled, conditions
+        case renameTitle, appliesCategory, tagIDs, createdByAssistant, applySnapshot
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(CategorizationRuleID.self, forKey: .id)
+        categoryID = try container.decode(CategoryID.self, forKey: .categoryID)
+        priority = try container.decode(Int.self, forKey: .priority)
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        conditions = try container.decode([CategorizationCondition].self, forKey: .conditions)
+        renameTitle = Self.normalizedRename(try container.decodeIfPresent(String.self, forKey: .renameTitle))
+        appliesCategory = try container.decodeIfPresent(Bool.self, forKey: .appliesCategory) ?? true
+        tagIDs = try container.decodeIfPresent([TagID].self, forKey: .tagIDs) ?? []
+        createdByAssistant = try container.decodeIfPresent(Bool.self, forKey: .createdByAssistant) ?? false
+        applySnapshot = try container.decodeIfPresent(
+            CategorizationRuleApplySnapshot.self,
+            forKey: .applySnapshot
+        )
     }
 
     private static func normalizedRename(_ value: String?) -> String? {

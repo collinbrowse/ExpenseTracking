@@ -160,6 +160,46 @@ struct SimpleFINClientTests {
         #expect(byID["acct-ok"]?.syncIssue == nil)
     }
 
+    @Test("errlist falls back to account or institution name when ids miss")
+    func attachesSyncIssuesByName() {
+        let chase = RemoteAccountSnapshot(
+            externalID: "acct-chase",
+            name: "Total Checking",
+            institutionName: "Chase",
+            currencyCode: "USD",
+            balance: 10,
+            balanceDate: .now,
+            transactions: [],
+            connectionExternalID: "conn-chase"
+        )
+        let other = RemoteAccountSnapshot(
+            externalID: "acct-other",
+            name: "Everyday",
+            institutionName: "Ally",
+            currencyCode: "USD",
+            balance: 20,
+            balanceDate: .now,
+            transactions: [],
+            connectionExternalID: "conn-ally"
+        )
+
+        let result = SimpleFINClient.applyingSyncIssues(
+            to: [chase, other],
+            errors: [
+                SimpleFINErrorDTO(
+                    code: "auth",
+                    msg: "Authentication failed for Chase",
+                    connID: "stale-conn",
+                    accountID: "stale-account"
+                ),
+            ]
+        )
+
+        let byID = Dictionary(uniqueKeysWithValues: result.map { ($0.externalID, $0) })
+        #expect(byID["acct-chase"]?.syncIssue == "Authentication failed for Chase")
+        #expect(byID["acct-other"]?.syncIssue == nil)
+    }
+
     @Test("Pending posted=0 maps to pending with non-epoch date")
     func pendingZeroPostedMaps() async throws {
         let postedAnchor = 1_700_000_000

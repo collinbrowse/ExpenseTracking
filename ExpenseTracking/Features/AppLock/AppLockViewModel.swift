@@ -91,10 +91,11 @@ final class AppLockViewModel {
             unlockErrorMessage = nil
         } catch let error as CashFlowError where error == .cancelled {
             // Stay locked; user can tap Unlock again.
-        } catch let error as CashFlowError where error == .authenticationUnavailable {
-            unlockErrorMessage = "Device authentication is unavailable. Set a passcode in Settings."
         } catch {
-            unlockErrorMessage = "Could not unlock. Try again."
+            unlockErrorMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Could not unlock. Try again."
+            )
         }
     }
 
@@ -131,10 +132,11 @@ final class AppLockViewModel {
             }
         } catch let error as CashFlowError where error == .cancelled {
             // Leave preference unchanged.
-        } catch let error as CashFlowError where error == .authenticationUnavailable {
-            settingsErrorMessage = "Device authentication is unavailable. Set a passcode in Settings."
         } catch {
-            settingsErrorMessage = "Could not update app lock. Try again."
+            settingsErrorMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Could not update app lock. Try again."
+            )
         }
     }
 

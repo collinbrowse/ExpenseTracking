@@ -8,8 +8,7 @@ import Foundation
 /// `Duplicate version checksums detected`. Additive fields use defaults on the
 /// `@Model` types; incompatible stores are wiped in `ModelContainerFactory`.
 public enum CashFlowSchemaV1: VersionedSchema {
-    // Schema.Version is not Sendable; safe as an immutable schema constant.
-    public nonisolated(unsafe) static let versionIdentifier = Schema.Version(1, 0, 0)
+    public static let versionIdentifier = Schema.Version(1, 0, 0)
     public static var models: [any PersistentModel.Type] {
         [
             AccountEntity.self,
@@ -90,6 +89,12 @@ public final class TransactionEntity {
     public var isPending: Bool
     /// When true, user categorization rules never change this row’s category.
     public var categoryLocked: Bool = false
+    /// Local-only merchant title from on-device enrichment; sync never invents this.
+    public var enrichedTitle: String?
+    /// Local-only location from on-device enrichment; sync never invents this.
+    public var enrichedLocation: String?
+    /// JSON-encoded `[TagID]` the user removed; rules must not re-add these.
+    public var suppressedTagIDsData: Data? = nil
     /// Composite uniqueness helper: accountExternalID + transactionExternalID
     @Attribute(.unique) public var syncKey: String
 
@@ -112,7 +117,10 @@ public final class TransactionEntity {
         isPending: Bool,
         syncKey: String,
         account: AccountEntity?,
-        categoryLocked: Bool = false
+        categoryLocked: Bool = false,
+        enrichedTitle: String? = nil,
+        enrichedLocation: String? = nil,
+        suppressedTagIDsData: Data? = nil
     ) {
         self.id = id
         self.externalID = externalID
@@ -127,6 +135,9 @@ public final class TransactionEntity {
         self.syncKey = syncKey
         self.account = account
         self.categoryLocked = categoryLocked
+        self.enrichedTitle = enrichedTitle
+        self.enrichedLocation = enrichedLocation
+        self.suppressedTagIDsData = suppressedTagIDsData
         self.tags = []
     }
 }
@@ -169,8 +180,14 @@ public final class CategorizationRuleEntity {
     public var conditionsData: Data
     /// Optional merchant title applied when the rule matches.
     public var renameTitle: String? = nil
-    /// When false, matching only renames; category is left alone.
+    /// When false, matching only renames / tags; category is left alone.
     public var appliesCategory: Bool = true
+    /// JSON-encoded `[TagID]` added when the rule matches.
+    public var tagIDsData: Data? = nil
+    /// True when the assistant created this rule.
+    public var createdByAssistant: Bool = false
+    /// JSON-encoded `CategorizationRuleApplySnapshot` from the last apply.
+    public var applySnapshotData: Data? = nil
 
     public init(
         id: String,
@@ -179,7 +196,10 @@ public final class CategorizationRuleEntity {
         isEnabled: Bool = true,
         conditionsData: Data,
         renameTitle: String? = nil,
-        appliesCategory: Bool = true
+        appliesCategory: Bool = true,
+        tagIDsData: Data? = nil,
+        createdByAssistant: Bool = false,
+        applySnapshotData: Data? = nil
     ) {
         self.id = id
         self.categoryID = categoryID
@@ -188,6 +208,9 @@ public final class CategorizationRuleEntity {
         self.conditionsData = conditionsData
         self.renameTitle = renameTitle
         self.appliesCategory = appliesCategory
+        self.tagIDsData = tagIDsData
+        self.createdByAssistant = createdByAssistant
+        self.applySnapshotData = applySnapshotData
     }
 }
 

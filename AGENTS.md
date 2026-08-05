@@ -40,6 +40,7 @@ Applies to **all** code: domain, data, features, design system, tests.
 - Net cash flow math outside `CalculateNetCashFlowUseCase`
 - Loading all transactions into the list UI (use keyset pagination)
 - Constructing `SimpleFINBankLinkingService` outside `DependencyContainer`
+- Parallel error mappers / raw `"CashFlowError error N"` UI — use `CashFlowError.userFacingMessage(for:fallback:)`
 
 ## Definition of done
 

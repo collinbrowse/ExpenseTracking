@@ -146,7 +146,10 @@ final class HomeViewModel {
             return
         } catch {
             guard generation == reloadGeneration else { return }
-            bannerMessage = "Couldn't load transactions."
+            bannerMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't load transactions."
+            )
         }
     }
 
@@ -170,16 +173,21 @@ final class HomeViewModel {
         } catch CashFlowError.cancelled {
             isLoading = false
             return
-        } catch CashFlowError.unauthorized {
-            bannerMessage = "Reconnect your account — access was revoked."
-            await reload(preferLoadingIndicator: wasUnlinkedEmpty)
         } catch {
-            let asOf = (await syncServing.connectionStatus()).lastSuccessfulSyncAt
-            if let asOf {
-                bannerMessage =
-                    "Couldn't refresh — showing data as of \(DateFormatting.medium(asOf))."
+            if CashFlowError.fromBridgedError(error) == .unauthorized {
+                bannerMessage = "Reconnect your account — access was revoked."
             } else {
-                bannerMessage = "Couldn't refresh. Showing last saved data."
+                let detail = CashFlowError.userFacingMessage(
+                    for: error,
+                    fallback: "Couldn't refresh."
+                )
+                let asOf = (await syncServing.connectionStatus()).lastSuccessfulSyncAt
+                if let asOf {
+                    bannerMessage =
+                        "\(detail) Showing data as of \(DateFormatting.medium(asOf))."
+                } else {
+                    bannerMessage = "\(detail) Showing last saved data."
+                }
             }
             await reload(preferLoadingIndicator: wasUnlinkedEmpty)
         }
