@@ -11,6 +11,12 @@ struct TransactionsView: View {
 
     var body: some View {
         List {
+            if let progress = viewModel.syncProgress {
+                SyncProgressBanner(progress: progress)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            }
+
             if let banner = viewModel.bannerMessage {
                 Text(banner)
                     .font(.footnote)

@@ -43,6 +43,7 @@ final class TransactionsViewModel {
     var isLoadingPage = false
     var hasMore = true
     var bannerMessage: String?
+    var syncProgress: SyncProgress?
     var selectedTransactionID: TransactionID?
     var editingDescription = ""
     var editingCategoryID: CategoryID = SystemCategory.other.id
@@ -61,6 +62,7 @@ final class TransactionsViewModel {
     private var accountNames: [AccountID: String] = [:]
     private var tagNames: [TagID: String] = [:]
     private var matchingRulesTask: Task<Void, Never>?
+    private var syncProgressTask: Task<Void, Never>?
 
     init(
         transactionRepository: any TransactionRepository,
@@ -186,12 +188,23 @@ final class TransactionsViewModel {
     private var hasLoadedOnce = false
 
     func onAppear() async {
+        startObservingSyncProgress()
         await refreshAccounts()
         await refreshTags()
         // Avoid resetting the list (and scroll position) every time the tab reappears.
         guard !hasLoadedOnce else { return }
         hasLoadedOnce = true
         await resetAndLoad()
+    }
+
+    private func startObservingSyncProgress() {
+        guard syncProgressTask == nil else { return }
+        syncProgressTask = Task { [syncServing] in
+            for await progress in syncServing.syncProgressUpdates() {
+                guard !Task.isCancelled else { break }
+                syncProgress = progress
+            }
+        }
     }
 
     func applyFilters() async {

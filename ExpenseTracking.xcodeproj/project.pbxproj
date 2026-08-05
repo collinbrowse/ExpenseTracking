@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0209F1AF482D6B498F0BC94B /* CategorizationRuleEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5213B085723AD36B866CDFA /* CategorizationRuleEditorView.swift */; };
+		0CB13B0135FE814B9214E403 /* SyncProgressFormattingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90BF73861C7663A004025CE8 /* SyncProgressFormattingTests.swift */; };
 		0D7E5D742C29A2F29CA61960 /* SettingsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05CFEB21507294242AD5B22E /* SettingsViewModel.swift */; };
 		0EBF6F0A258BAFB764F4746D /* HomeRangeOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D7C90DEF9C2C555D59F74DF /* HomeRangeOption.swift */; };
 		261430CD8301182DC433B626 /* CashFlowWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FCFCCAC67FE975168E1093 /* CashFlowWidget.swift */; };
@@ -30,6 +31,7 @@
 		52F496F39DFCAA6CA25209CE /* TransactionRowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98D9986FD240B419EC807763 /* TransactionRowModel.swift */; };
 		553E5D638BC2878D09A3DA82 /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 706EFACF89D64DF70F7929C4 /* TransactionsView.swift */; };
 		55805C3F73D0CDD496A07CDA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20CA286B437BD562F56EEA32 /* SettingsView.swift */; };
+		558F2B7513900D59CAC095A6 /* SyncProgressBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BB2E14CCB53383B09B6555B /* SyncProgressBanner.swift */; };
 		5DD69C237DF37289C7996F89 /* AppLockViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9579C4ADDD2253465274653B /* AppLockViewModel.swift */; };
 		5E1A212CC864BFDF5398C069 /* SimpleFINLinkSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E51E787C3750C7FC2DF416BE /* SimpleFINLinkSheet.swift */; };
 		5FB2A832F69A71C0C7B581A7 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C545D687A63897057450D954 /* RootTabView.swift */; };
@@ -112,7 +114,9 @@
 		818BA9B28223CF1B50FA3B7D /* AppLockGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockGateView.swift; sourceTree = "<group>"; };
 		84EE74E0414355D7D785F684 /* TagChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagChip.swift; sourceTree = "<group>"; };
 		85F222A5376811A2E5286999 /* ExpenseTrackingWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = ExpenseTrackingWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8BB2E14CCB53383B09B6555B /* SyncProgressBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncProgressBanner.swift; sourceTree = "<group>"; };
 		8CF3983C760E4F945A271217 /* TransactionsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsViewModel.swift; sourceTree = "<group>"; };
+		90BF73861C7663A004025CE8 /* SyncProgressFormattingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncProgressFormattingTests.swift; sourceTree = "<group>"; };
 		9579C4ADDD2253465274653B /* AppLockViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockViewModel.swift; sourceTree = "<group>"; };
 		98D9986FD240B419EC807763 /* TransactionRowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionRowModel.swift; sourceTree = "<group>"; };
 		999BA463B44CFB2D694CE5AF /* AssistantViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantViewModelTests.swift; sourceTree = "<group>"; };
@@ -203,6 +207,7 @@
 			children = (
 				BE5B0CF9A3FE0413DF3383C1 /* CategoryIcon.swift */,
 				9D2461325028EEADEE94B7D8 /* DismissKeyboardOnTap.swift */,
+				8BB2E14CCB53383B09B6555B /* SyncProgressBanner.swift */,
 				84EE74E0414355D7D785F684 /* TagChip.swift */,
 				9A4DCF42C34E246643DBD28B /* Theme.swift */,
 			);
@@ -324,6 +329,7 @@
 				999BA463B44CFB2D694CE5AF /* AssistantViewModelTests.swift */,
 				FB1A1F5F797ECAAF4EFE033B /* HomeViewModelTests.swift */,
 				C036F2FCD67F7EB5DB633F42 /* InsightsViewModelTests.swift */,
+				90BF73861C7663A004025CE8 /* SyncProgressFormattingTests.swift */,
 			);
 			path = ExpenseTrackingTests;
 			sourceTree = "<group>";
@@ -508,6 +514,7 @@
 				0D7E5D742C29A2F29CA61960 /* SettingsViewModel.swift in Sources */,
 				5E1A212CC864BFDF5398C069 /* SimpleFINLinkSheet.swift in Sources */,
 				DFC3968A89AA2D3AE80FF28A /* SpendingBreakdownChartView.swift in Sources */,
+				558F2B7513900D59CAC095A6 /* SyncProgressBanner.swift in Sources */,
 				487BFFA3C66B000A363FD6E2 /* TagChip.swift in Sources */,
 				B829D2866F033E3B98B30506 /* Theme.swift in Sources */,
 				D851F23FF5D168497B488968 /* TransactionAmountSearch.swift in Sources */,
@@ -528,6 +535,7 @@
 				F1E8BCE55BC02F0A8A8EFDE9 /* AssistantViewModelTests.swift in Sources */,
 				2D2637D4415DA7734E8B6134 /* HomeViewModelTests.swift in Sources */,
 				77E6FF5C2D3E54E5E11D5D9B /* InsightsViewModelTests.swift in Sources */,
+				0CB13B0135FE814B9214E403 /* SyncProgressFormattingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

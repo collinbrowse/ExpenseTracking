@@ -30,71 +30,69 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
         self.workCoordinator = workCoordinator
     }
 
-    public func enrichAfterSync() async {
+    public func enrichAfterSync(
+        onProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?
+    ) async {
         guard !isRunning else { return }
         guard await availability.availability() == .available else { return }
         isRunning = true
         defer { isRunning = false }
 
-        await enrichDescriptions()
-        guard !(await workCoordinator.isAssistantPriorityActive) else { return }
-        await enrichCategories()
-    }
-
-    private func enrichDescriptions() async {
+        let needing: [Transaction]
         do {
-            let needing = try await transactionRepository.fetchNeedingEnrichment(
+            needing = try await transactionRepository.fetchNeedingEnrichment(
                 limit: Self.descriptionBatchLimit
             )
-            for transaction in needing {
-                if await workCoordinator.isAssistantPriorityActive { return }
-                let parsed = await descriptionEnricher.enrich(
-                    rawDescription: transaction.description
-                )
-                let title = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !title.isEmpty else { continue }
-                try await transactionRepository.updateEnrichment(
+        } catch {
+            return
+        }
+
+        let categoryTargets: [Transaction]
+        if await workCoordinator.isAssistantPriorityActive {
+            categoryTargets = []
+        } else {
+            categoryTargets = (try? await categoryTargetsNeedingSuggestion()) ?? []
+        }
+
+        let total = needing.count + categoryTargets.count
+        guard total > 0 else { return }
+
+        var completed = 0
+        onProgress?(completed, total)
+
+        for transaction in needing {
+            if await workCoordinator.isAssistantPriorityActive { return }
+            let parsed = await descriptionEnricher.enrich(
+                rawDescription: transaction.description
+            )
+            let title = parsed.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty {
+                try? await transactionRepository.updateEnrichment(
                     transactionID: transaction.id,
                     title: title,
                     location: parsed.location
                 )
             }
-        } catch {
-            // Best-effort; sync already succeeded.
+            completed += 1
+            onProgress?(completed, total)
         }
-    }
 
-    private func enrichCategories() async {
-        do {
-            let rules = try await ruleRepository.fetchAll()
-            let candidates = try await transactionRepository.fetchAllForCategorization()
-            var assignments: [CategoryAssignment] = []
-            assignments.reserveCapacity(Self.categoryBatchLimit)
+        guard !(await workCoordinator.isAssistantPriorityActive) else { return }
+        guard !categoryTargets.isEmpty else { return }
 
-            for transaction in candidates {
-                if await workCoordinator.isAssistantPriorityActive { break }
-                guard assignments.count < Self.categoryBatchLimit else { break }
-                guard !transaction.categoryLocked else { continue }
-                guard !transaction.userEditedCategory else { continue }
+        var assignments: [CategoryAssignment] = []
+        assignments.reserveCapacity(categoryTargets.count)
 
-                let matching = CategorizationRuleMatcher.matchingRules(
-                    rules,
-                    transaction: transaction
-                )
-                if matching.contains(where: \.appliesCategory) {
-                    continue
-                }
-
-                let haystack = transaction.enrichedTitle ?? transaction.displayTitle
-                guard let suggested = await categoryEnricher.suggestCategory(
-                    description: haystack,
-                    amount: transaction.amount
-                ) else {
-                    continue
-                }
-                guard suggested != transaction.categoryID else { continue }
-                guard transaction.categoryID == SystemCategory.other.id else { continue }
-
+        for transaction in categoryTargets {
+            if await workCoordinator.isAssistantPriorityActive { break }
+            let haystack = transaction.enrichedTitle ?? transaction.displayTitle
+            if let suggested = await categoryEnricher.suggestCategory(
+                description: haystack,
+                amount: transaction.amount
+            ),
+               suggested != transaction.categoryID,
+               transaction.categoryID == SystemCategory.other.id
+            {
                 assignments.append(
                     CategoryAssignment(
                         transactionID: transaction.id,
@@ -103,16 +101,44 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
                     )
                 )
             }
-
-            try await transactionRepository.applyCategoryAssignments(assignments)
-        } catch {
-            // Best-effort.
+            completed += 1
+            onProgress?(completed, total)
         }
+
+        try? await transactionRepository.applyCategoryAssignments(assignments)
+    }
+
+    private func categoryTargetsNeedingSuggestion() async throws -> [Transaction] {
+        let rules = try await ruleRepository.fetchAll()
+        let candidates = try await transactionRepository.fetchAllForCategorization()
+        var targets: [Transaction] = []
+        targets.reserveCapacity(Self.categoryBatchLimit)
+
+        for transaction in candidates {
+            guard targets.count < Self.categoryBatchLimit else { break }
+            guard !transaction.categoryLocked else { continue }
+            guard !transaction.userEditedCategory else { continue }
+            guard transaction.categoryID == SystemCategory.other.id else { continue }
+
+            let matching = CategorizationRuleMatcher.matchingRules(
+                rules,
+                transaction: transaction
+            )
+            if matching.contains(where: \.appliesCategory) {
+                continue
+            }
+            targets.append(transaction)
+        }
+        return targets
     }
 }
 
 /// No-op runner for tests / AI-unavailable hosts that still need a conforming value.
 public struct NoOpTransactionEnrichmentRunner: TransactionEnrichmentRunning {
     public init() {}
-    public func enrichAfterSync() async {}
+    public func enrichAfterSync(
+        onProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?
+    ) async {
+        _ = onProgress
+    }
 }

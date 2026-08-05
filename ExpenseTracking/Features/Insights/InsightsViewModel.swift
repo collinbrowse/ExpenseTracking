@@ -38,6 +38,7 @@ final class InsightsViewModel {
     var isLoading = true
     var isRefreshing = false
     var bannerMessage: String?
+    var syncProgress: SyncProgress?
     var earliestPostedDate: Date?
     var availableRangeOptions: [HomeRangeOption] = HomeRangeOption.pickerOptions(earliestPosted: nil)
 
@@ -63,6 +64,7 @@ final class InsightsViewModel {
     private var reloadGeneration = 0
     /// Last fetched posted transactions for the selected range (reused when toggling scope).
     private var cachedTransactions: [Transaction] = []
+    private var syncProgressTask: Task<Void, Never>?
 
     init(
         transactionRepository: any TransactionRepository,
@@ -112,7 +114,18 @@ final class InsightsViewModel {
     }
 
     func onAppear() async {
+        startObservingSyncProgress()
         await reload(preferLoadingIndicator: !hasExpenseData && categoryRows.isEmpty)
+    }
+
+    private func startObservingSyncProgress() {
+        guard syncProgressTask == nil else { return }
+        syncProgressTask = Task { [syncServing] in
+            for await progress in syncServing.syncProgressUpdates() {
+                guard !Task.isCancelled else { break }
+                syncProgress = progress
+            }
+        }
     }
 
     func toggleCategoryFocus(_ categoryID: CategoryID) {

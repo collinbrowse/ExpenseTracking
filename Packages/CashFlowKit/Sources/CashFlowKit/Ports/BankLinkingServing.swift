@@ -112,4 +112,17 @@ public protocol BankLinkingServing: Sendable {
 public protocol SyncServing: Sendable {
     func syncNow() async throws -> LinkedConnection
     func connectionStatus() async -> LinkedConnection
+
+    /// Live sync progress. Yields the latest value on subscribe when a sync is in flight;
+    /// yields `nil` when idle. Overlapping `syncNow` callers share one sync and one stream.
+    func syncProgressUpdates() -> AsyncStream<SyncProgress?>
+}
+
+extension SyncServing {
+    public func syncProgressUpdates() -> AsyncStream<SyncProgress?> {
+        AsyncStream { continuation in
+            continuation.yield(nil)
+            continuation.finish()
+        }
+    }
 }

@@ -55,13 +55,23 @@ public actor DemoBankLinkingService: BankLinkingServing {
         startDate: Date?,
         endDate: Date?
     ) async throws -> RemoteSyncPayload {
+        try await fetchAccounts(startDate: startDate, endDate: endDate, onWindowProgress: nil)
+    }
+
+    public func fetchAccounts(
+        startDate: Date?,
+        endDate: Date?,
+        onWindowProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?
+    ) async throws -> RemoteSyncPayload {
         guard isLinked else { throw CashFlowError.notLinked }
+        onWindowProgress?(0, 1)
         let accounts = Self.makeAccounts(
             count: seedSize.transactionCount,
             now: clock,
             startDate: startDate,
             endDate: endDate
         )
+        onWindowProgress?(1, 1)
         return RemoteSyncPayload(accounts: accounts)
     }
 

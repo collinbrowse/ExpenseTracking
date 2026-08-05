@@ -23,7 +23,7 @@ Code: `ExpenseTracking/Features/Home/`
 - Filters (sheet): account, category, tag, date (All / Month / 30d / Year / Custom)
 - Search over **already loaded** rows: title, category, tags, account, amount digits (e.g. `66` → `$66.43`)
 - Edit sheet: category + description + multi-select tags (no delete in MVP)
-- Pull-to-refresh sync
+- Pull-to-refresh sync with stage/window progress banner (not transaction totals)
 
 Code: `ExpenseTracking/Features/Transactions/`
 
@@ -74,6 +74,7 @@ Code: `ExpenseTracking/Features/AppLock/`, `Features/Settings/`, `CashFlowData/S
 ### Sync & data
 
 - `SyncCoordinator` — single-flight; cancel waits for slot; failures keep last good local data
+- Sync progress stream (`SyncProgress`): preparing → downloading (date windows) → saving → optional enriching; UI on Home / Transactions / Insights / Accounts
 - `connectionStatus` assembles Keychain/Demo + `ConnectionEntity` (`needsReauth`, last sync)
 - Initial / incomplete history: ~2-year lookback (chunked ≤90 days with ~5-day overlap for SimpleFIN) until `historyBackfillComplete`; later syncs use watermark − 30 days
 - Pending transactions are requested (`pending=1`), persisted, shown in the list, and flip to posted on the same sync key when the bank posts them; Home net still excludes pending
