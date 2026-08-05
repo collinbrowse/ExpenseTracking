@@ -81,14 +81,30 @@ public actor CompositeBankLinkingService: BankLinkingServing {
         startDate: Date?,
         endDate: Date?
     ) async throws -> RemoteSyncPayload {
+        try await fetchAccounts(startDate: startDate, endDate: endDate, onWindowProgress: nil)
+    }
+
+    public func fetchAccounts(
+        startDate: Date?,
+        endDate: Date?,
+        onWindowProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?
+    ) async throws -> RemoteSyncPayload {
         await resolveModeIfNeeded()
         switch mode {
         case .none:
             throw CashFlowError.notLinked
         case .demo:
-            return try await demo.fetchAccounts(startDate: startDate, endDate: endDate)
+            return try await demo.fetchAccounts(
+                startDate: startDate,
+                endDate: endDate,
+                onWindowProgress: onWindowProgress
+            )
         case .simpleFIN:
-            return try await simpleFIN.fetchAccounts(startDate: startDate, endDate: endDate)
+            return try await simpleFIN.fetchAccounts(
+                startDate: startDate,
+                endDate: endDate,
+                onWindowProgress: onWindowProgress
+            )
         }
     }
 

@@ -30,6 +30,7 @@ final class HomeViewModel {
     /// Starts true so the first paint is a loader, not a flash of the empty state.
     var isLoading = true
     var bannerMessage: String?
+    var syncProgress: SyncProgress?
     var isOffline = false
     var showCustomRange = false
     /// True when the selected range has at least one posted transaction (drives chart animation).
@@ -44,6 +45,7 @@ final class HomeViewModel {
 
     private var reloadTask: Task<Void, Never>?
     private var reloadGeneration = 0
+    private var syncProgressTask: Task<Void, Never>?
 
     init(
         transactionRepository: any TransactionRepository,
@@ -69,8 +71,19 @@ final class HomeViewModel {
     }
 
     func onAppear() async {
+        startObservingSyncProgress()
         isOffline = !connectivity.isOnline
         await reload(preferLoadingIndicator: !hasStoreHistory && !hasData)
+    }
+
+    private func startObservingSyncProgress() {
+        guard syncProgressTask == nil else { return }
+        syncProgressTask = Task { [syncServing] in
+            for await progress in syncServing.syncProgressUpdates() {
+                guard !Task.isCancelled else { break }
+                syncProgress = progress
+            }
+        }
     }
 
     /// Updates the segmented control synchronously, then reloads (cancelling any in-flight range load).

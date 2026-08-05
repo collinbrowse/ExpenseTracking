@@ -10,6 +10,10 @@ struct InsightsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.sectionSpacing) {
+                if let progress = viewModel.syncProgress {
+                    SyncProgressBanner(progress: progress)
+                }
+
                 if let banner = viewModel.bannerMessage {
                     Text(banner)
                         .font(.footnote)

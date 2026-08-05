@@ -13,6 +13,7 @@ public actor SyncCoordinator: SyncServing {
     private let bankLinking: CompositeBankLinkingService
     private let snapshotStore: NetSnapshotStore
     private let enrichment: (any TransactionEnrichmentRunning)?
+    nonisolated private let progressHub: SyncProgressHub
     private let logger = Logger(subsystem: "com.expensetracking", category: "sync")
 
     private var inFlight: Task<LinkedConnection, Error>?
@@ -21,12 +22,14 @@ public actor SyncCoordinator: SyncServing {
         modelContainer: ModelContainer,
         bankLinking: CompositeBankLinkingService,
         snapshotStore: NetSnapshotStore = NetSnapshotStore(),
-        enrichment: (any TransactionEnrichmentRunning)? = nil
+        enrichment: (any TransactionEnrichmentRunning)? = nil,
+        progressHub: SyncProgressHub = SyncProgressHub()
     ) {
         self.modelContainer = modelContainer
         self.bankLinking = bankLinking
         self.snapshotStore = snapshotStore
         self.enrichment = enrichment
+        self.progressHub = progressHub
     }
 
     /// Assembles UI status from credentials (Keychain / Demo session) + durable `ConnectionEntity`.
@@ -68,13 +71,20 @@ public actor SyncCoordinator: SyncServing {
         )
     }
 
+    nonisolated public func syncProgressUpdates() -> AsyncStream<SyncProgress?> {
+        progressHub.subscribe()
+    }
+
     public func syncNow() async throws -> LinkedConnection {
         if let inFlight {
             return try await inFlight.value
         }
         let task = Task { try await performSync() }
         inFlight = task
-        defer { inFlight = nil }
+        defer {
+            inFlight = nil
+            progressHub.emit(nil)
+        }
         return try await task.value
     }
 
@@ -85,8 +95,13 @@ public actor SyncCoordinator: SyncServing {
         _ = await task.result
     }
 
+    private func emit(_ progress: SyncProgress) {
+        progressHub.emit(progress)
+    }
+
     private func performSync() async throws -> LinkedConnection {
         try Task.checkCancellation()
+        emit(SyncProgress(phase: .preparing))
 
         // Restore durable Demo / SimpleFIN mode before fetch — in-memory link state
         // is lost on process death and resolveModeIfNeeded cannot see ConnectionEntity.
@@ -111,9 +126,19 @@ public actor SyncCoordinator: SyncServing {
         do {
             let payload = try await bankLinking.fetchAccounts(
                 startDate: startDate,
-                endDate: nil
+                endDate: nil,
+                onWindowProgress: { [progressHub] completed, total in
+                    progressHub.emit(
+                        SyncProgress(
+                            phase: .downloading,
+                            completedUnits: completed,
+                            totalUnits: total
+                        )
+                    )
+                }
             )
             try Task.checkCancellation()
+            emit(SyncProgress(phase: .saving))
             try SyncMergeEngine.merge(payload: payload, into: context)
 
             let providerName = await bankLinking.activeProviderName()
@@ -130,7 +155,15 @@ public actor SyncCoordinator: SyncServing {
 
             // Best-effort on-device enrichment; never fails the sync.
             if let enrichment {
-                await enrichment.enrichAfterSync()
+                await enrichment.enrichAfterSync { [progressHub] completed, total in
+                    progressHub.emit(
+                        SyncProgress(
+                            phase: .enriching,
+                            completedUnits: completed,
+                            totalUnits: total
+                        )
+                    )
+                }
             }
 
             return LinkedConnection(

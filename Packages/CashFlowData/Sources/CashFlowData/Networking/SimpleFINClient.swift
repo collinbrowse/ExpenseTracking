@@ -67,7 +67,8 @@ public struct SimpleFINClient: Sendable {
     public func fetchAccounts(
         accessURL: String,
         startDate: Date?,
-        endDate: Date?
+        endDate: Date?,
+        onWindowProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)? = nil
     ) async throws -> RemoteSyncPayload {
         let resolvedEnd = endDate ?? .now
         let resolvedStart = startDate
@@ -81,15 +82,17 @@ public struct SimpleFINClient: Sendable {
             overlapDays: Self.windowOverlapDays
         )
 
+        onWindowProgress?(0, windows.count)
         var payloads: [RemoteSyncPayload] = []
         payloads.reserveCapacity(windows.count)
-        for window in windows {
+        for (index, window) in windows.enumerated() {
             let payload = try await fetchAccountsWindow(
                 accessURL: accessURL,
                 startDate: window.lowerBound,
                 endDate: window.upperBound
             )
             payloads.append(payload)
+            onWindowProgress?(index + 1, windows.count)
         }
         return Self.mergePayloads(payloads)
     }

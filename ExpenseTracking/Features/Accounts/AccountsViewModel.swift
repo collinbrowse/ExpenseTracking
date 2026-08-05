@@ -18,6 +18,7 @@ final class AccountsViewModel {
     var pendingLinkAfterOnboarding = false
     var isWorking = false
     var workingTitle: String?
+    var syncProgress: SyncProgress?
     var statusBanner: String?
     var errorAlert: AccountsErrorAlert?
     var showOnboarding: Bool
@@ -27,6 +28,15 @@ final class AccountsViewModel {
 
     private var operationID = UUID()
     private var statusBannerDismissTask: Task<Void, Never>?
+    private var syncProgressTask: Task<Void, Never>?
+
+    /// Prefer live sync stage copy while a sync is in flight.
+    var busyOverlayTitle: String {
+        if let syncProgress {
+            return SyncProgressFormatting.title(for: syncProgress)
+        }
+        return workingTitle ?? "Working…"
+    }
 
     var hasOrphanLocalData: Bool {
         !connection.isLinked && !accounts.isEmpty
@@ -78,7 +88,18 @@ final class AccountsViewModel {
     }
 
     func onAppear() async {
+        startObservingSyncProgress()
         await refreshStatus()
+    }
+
+    private func startObservingSyncProgress() {
+        guard syncProgressTask == nil else { return }
+        syncProgressTask = Task { [syncServing] in
+            for await progress in syncServing.syncProgressUpdates() {
+                guard !Task.isCancelled else { break }
+                syncProgress = progress
+            }
+        }
     }
 
     func refreshStatus() async {

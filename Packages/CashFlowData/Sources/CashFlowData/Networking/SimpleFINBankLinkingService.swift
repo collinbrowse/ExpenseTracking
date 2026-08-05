@@ -43,6 +43,14 @@ public actor SimpleFINBankLinkingService: BankLinkingServing {
         startDate: Date?,
         endDate: Date?
     ) async throws -> RemoteSyncPayload {
+        try await fetchAccounts(startDate: startDate, endDate: endDate, onWindowProgress: nil)
+    }
+
+    public func fetchAccounts(
+        startDate: Date?,
+        endDate: Date?,
+        onWindowProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?
+    ) async throws -> RemoteSyncPayload {
         guard let accessURL = try accessURLStore.load() else {
             throw CashFlowError.notLinked
         }
@@ -50,7 +58,8 @@ public actor SimpleFINBankLinkingService: BankLinkingServing {
             let payload = try await client.fetchAccounts(
                 accessURL: accessURL,
                 startDate: startDate,
-                endDate: endDate
+                endDate: endDate,
+                onWindowProgress: onWindowProgress
             )
             // Watermark / lastSuccessfulSyncAt are owned by SyncCoordinator + ConnectionEntity.
             needsReauth = false
