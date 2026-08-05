@@ -91,6 +91,9 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
             throw CashFlowError.persistence(message: "Transaction not found")
         }
         entity.transactionDescription = description
+        // Description changed — invalidate local enrichment so post-sync can refill.
+        entity.enrichedTitle = nil
+        entity.enrichedLocation = nil
         try context.save()
     }
 
@@ -106,9 +109,12 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         guard let entity = try context.fetch(descriptor).first else {
             throw CashFlowError.persistence(message: "Transaction not found")
         }
+        let previous = entity.tags.map { TagID($0.id) }
         let uniqueIDs = Array(Set(tagIDs.map(\.rawValue)))
+        let newTags: [TagID]
         if uniqueIDs.isEmpty {
             entity.tags = []
+            newTags = []
         } else {
             let tagPredicate = #Predicate<TagEntity> { uniqueIDs.contains($0.id) }
             let tags = try context.fetch(FetchDescriptor<TagEntity>(predicate: tagPredicate))
@@ -116,7 +122,15 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
                 throw CashFlowError.persistence(message: "One or more tags were not found.")
             }
             entity.tags = tags
+            newTags = tags.map { TagID($0.id) }
         }
+        let existingSuppressions = EntityMappers.decodeTagIDs(entity.suppressedTagIDsData)
+        let updated = ResolveTransactionCategoryUseCase.updatedSuppressions(
+            previous: previous,
+            new: newTags,
+            existingSuppressions: existingSuppressions
+        )
+        entity.suppressedTagIDsData = try EntityMappers.encodeTagIDs(updated)
         try context.save()
     }
 
@@ -139,12 +153,78 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         try context.save()
     }
 
+    public func applyTagAssignments(_ assignments: [TagAssignment]) async throws {
+        guard !assignments.isEmpty else { return }
+        let context = ModelContext(modelContainer)
+        for assignment in assignments {
+            let id = assignment.transactionID.rawValue
+            let predicate = #Predicate<TransactionEntity> { $0.id == id }
+            var descriptor = FetchDescriptor<TransactionEntity>(predicate: predicate)
+            descriptor.fetchLimit = 1
+            guard let entity = try context.fetch(descriptor).first else {
+                throw CashFlowError.persistence(message: "Transaction not found")
+            }
+            let uniqueIDs = Array(Set(assignment.tagIDs.map(\.rawValue)))
+            if uniqueIDs.isEmpty {
+                entity.tags = []
+            } else {
+                let tagPredicate = #Predicate<TagEntity> { uniqueIDs.contains($0.id) }
+                let tags = try context.fetch(FetchDescriptor<TagEntity>(predicate: tagPredicate))
+                guard tags.count == uniqueIDs.count else {
+                    throw CashFlowError.persistence(message: "One or more tags were not found.")
+                }
+                entity.tags = tags
+            }
+            // Only undo/restore paths supply suppressions; rule/assistant applies leave them alone.
+            if let suppressed = assignment.suppressedTagIDs {
+                entity.suppressedTagIDsData = try EntityMappers.encodeTagIDs(suppressed)
+            }
+        }
+        try context.save()
+    }
+
+    public func updateEnrichment(
+        transactionID: TransactionID,
+        title: String,
+        location: String?
+    ) async throws {
+        let context = ModelContext(modelContainer)
+        let id = transactionID.rawValue
+        let predicate = #Predicate<TransactionEntity> { $0.id == id }
+        var descriptor = FetchDescriptor<TransactionEntity>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        guard let entity = try context.fetch(descriptor).first else {
+            throw CashFlowError.persistence(message: "Transaction not found")
+        }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else {
+            throw CashFlowError.persistence(message: "Enriched title can't be empty.")
+        }
+        let trimmedLocation = location?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        entity.enrichedTitle = trimmedTitle
+        entity.enrichedLocation = (trimmedLocation?.isEmpty == false) ? trimmedLocation : nil
+        try context.save()
+    }
+
     public func fetchAllForCategorization() async throws -> [Transaction] {
         let context = ModelContext(modelContainer)
         let descriptor = FetchDescriptor<TransactionEntity>(
             predicate: #Predicate { !$0.isPending }
         )
         return try context.fetch(descriptor).map(EntityMappers.transaction(from:))
+    }
+
+    public func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction] {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate { !$0.isPending },
+            sortBy: [SortDescriptor(\.postedDate, order: .reverse)]
+        )
+        let entities = try context.fetch(descriptor)
+            .filter { $0.enrichedTitle == nil || $0.enrichedTitle?.isEmpty == true }
+            .prefix(max(0, limit))
+        return entities.map(EntityMappers.transaction(from:))
     }
 
     /// Keyset scan that can walk the full store (no hard 1k cap) for infinite scrolling.

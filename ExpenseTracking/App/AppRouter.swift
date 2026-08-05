@@ -4,7 +4,7 @@ enum AppTab: Hashable {
     case home
     case transactions
     case insights
-    case accounts
+    case settings
 }
 
 enum HomeRoute: Hashable {

@@ -2,7 +2,7 @@
 
 iPhone app that syncs accounts (**SimpleFIN** or **Demo**) and answers one question: **have I made more than I’ve spent?**
 
-Display name: **Cash Flow** · Bundle ID: `com.expensetracking.app` · Platform: **iOS 17+** · Language: **Swift 6**
+Display name: **Cash Flow** · Bundle ID: `com.collinbrowse.expensetracking.app` · Platform: **iOS 26+** · Language: **Swift 6**
 
 ## Current status (MVP)
 
@@ -25,7 +25,7 @@ See [docs/STATUS.md](docs/STATUS.md) for a fuller feature inventory and known li
 ## Requirements
 
 - Xcode 16+
-- iOS 17+
+- iOS 26+
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 
 ## Setup

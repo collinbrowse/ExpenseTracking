@@ -393,7 +393,8 @@ struct CategorizationRulesPersistenceTests {
         let refreshed = try ModelContext(container).fetch(FetchDescriptor<TransactionEntity>())
         let tx = try #require(refreshed.first)
         #expect(tx.categoryID == SystemCategory.shopping.id.rawValue)
-        #expect(tx.userEditedCategory == true)
+        // Rename-only must not sticky-mark the category as user-edited.
+        #expect(tx.userEditedCategory == false)
         let parsed = ParseTransactionDescriptionUseCase.execute(tx.transactionDescription)
         #expect(parsed.title == "Starbucks")
         #expect(parsed.location == "Denver CO")

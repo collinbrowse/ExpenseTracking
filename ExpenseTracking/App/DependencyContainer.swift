@@ -20,6 +20,12 @@ final class DependencyContainer {
     let calculateSpendingBreakdown: CalculateSpendingBreakdownUseCase
     let appLockPreferences: any AppLockPreferencesStoring
     let deviceAuthentication: any DeviceAuthenticationServing
+    let onDeviceModelAvailability: any OnDeviceModelAvailabilityChecking
+    let descriptionEnricher: any TransactionDescriptionEnriching
+    let categoryEnricher: any TransactionCategoryEnriching
+    let transactionEnrichment: any TransactionEnrichmentRunning
+    let transactionAssistant: any TransactionAssistantServing
+    let categorizationRuleDrafting: any CategorizationRuleDrafting
     let useLargeDemoSeed: Bool
 
     /// Launch-safe: SwiftData load/migration failures wipe and fall back; never fails for disk issues.
@@ -51,15 +57,45 @@ final class DependencyContainer {
     private init(modelContainer: ModelContainer, largeDemoSeed: Bool) {
         self.useLargeDemoSeed = largeDemoSeed
         self.modelContainer = modelContainer
-        self.transactionRepository = SwiftDataTransactionRepository(modelContainer: modelContainer)
+        let transactionRepository = SwiftDataTransactionRepository(modelContainer: modelContainer)
+        self.transactionRepository = transactionRepository
         self.accountRepository = SwiftDataAccountRepository(modelContainer: modelContainer)
-        self.categorizationRuleRepository = SwiftDataCategorizationRuleRepository(
+        let categorizationRuleRepository = SwiftDataCategorizationRuleRepository(
             modelContainer: modelContainer
         )
+        self.categorizationRuleRepository = categorizationRuleRepository
         self.categorizationRuleApplying = CategorizationRuleReapplier(
             modelContainer: modelContainer
         )
-        self.tagRepository = SwiftDataTagRepository(modelContainer: modelContainer)
+        let tagRepository = SwiftDataTagRepository(modelContainer: modelContainer)
+        self.tagRepository = tagRepository
+
+        let availability = AppleIntelligenceAvailabilityChecker()
+        self.onDeviceModelAvailability = availability
+        let descriptionEnricher = DescriptionEnricherFactory.make(availability: availability)
+        self.descriptionEnricher = descriptionEnricher
+        let categoryEnricher = CategoryEnricherFactory.make(availability: availability)
+        self.categoryEnricher = categoryEnricher
+        let enrichment = TransactionEnrichmentCoordinator(
+            availability: availability,
+            descriptionEnricher: descriptionEnricher,
+            categoryEnricher: categoryEnricher,
+            transactionRepository: transactionRepository,
+            ruleRepository: categorizationRuleRepository
+        )
+        self.transactionEnrichment = enrichment
+        self.transactionAssistant = TransactionAssistantFactory.make(
+            availability: availability,
+            transactionRepository: transactionRepository,
+            tagRepository: tagRepository,
+            accountRepository: accountRepository,
+            ruleRepository: categorizationRuleRepository,
+            ruleApplying: categorizationRuleApplying
+        )
+        self.categorizationRuleDrafting = CategorizationRuleDraftingFactory.make(
+            availability: availability
+        )
+
         let demo = DemoBankLinkingService(
             seedSize: largeDemoSeed ? .large : .standard
         )
@@ -70,7 +106,8 @@ final class DependencyContainer {
         let sync = SyncCoordinator(
             modelContainer: modelContainer,
             bankLinking: linking,
-            snapshotStore: snapshotStore
+            snapshotStore: snapshotStore,
+            enrichment: enrichment
         )
         self.syncServing = sync
         let resetter = LocalDataResetter(

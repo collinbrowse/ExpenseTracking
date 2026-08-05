@@ -35,8 +35,21 @@ public protocol TransactionRepository: Sendable {
     /// Store-wide write for categorization rule re-apply. Not for list UI.
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws
 
+    /// Store-wide tag membership replace for assistant confirm. Not for list UI.
+    func applyTagAssignments(_ assignments: [TagAssignment]) async throws
+
+    /// Persists local-only merchant/location enrichment cache.
+    func updateEnrichment(
+        transactionID: TransactionID,
+        title: String,
+        location: String?
+    ) async throws
+
     /// Posted (non-pending) transactions for rule re-apply. Not for list UI pagination.
     func fetchAllForCategorization() async throws -> [Transaction]
+
+    /// Posted transactions missing enrichment cache (for post-sync enrichment).
+    func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction]
 }
 
 public protocol AccountRepository: Sendable {

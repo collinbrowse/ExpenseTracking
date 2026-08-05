@@ -16,4 +16,13 @@ public protocol CategorizationRuleRepository: Sendable {
 public protocol CategorizationRuleApplying: Sendable {
     /// Re-resolves categories for all unlocked transactions. Returns how many categories changed.
     func reapplyAllRules() async throws -> Int
+
+    /// Upserts the rule, captures an undo snapshot for transactions it changes, then reapplies.
+    @discardableResult
+    func applyAndCaptureUndo(for rule: CategorizationRule) async throws -> CategorizationRule
+
+    /// Disables the rule and restores its last apply where the user hasn’t edited since.
+    /// Returns how many transactions were restored.
+    @discardableResult
+    func undoRule(id: CategorizationRuleID) async throws -> Int
 }

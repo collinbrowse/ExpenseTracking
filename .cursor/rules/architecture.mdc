@@ -21,6 +21,10 @@ Do not add multi-purpose types, bypass ports with concretes in Features, or wide
 
 Use `Decimal` only. Never `Double`/`Float` for amounts in domain, data, or UI models (chart plotting may convert at the view edge only).
 
+## Errors
+
+Throw `CashFlowError` from CashFlowData. Every case carries a user-facing `errorDescription`. Features display failures only via `CashFlowError.userFacingMessage(for:fallback:)` — no parallel mappers, no raw `"CashFlowError error N"` banners. Foundation Models mapping stays in CashFlowData and finishes as `.intelligence(message:)` / `.intelligenceUnavailable`.
+
 ## Transactions list
 
 Keyset pagination (page size 50). Predicate-scoped filters (account, date, category). Preformatted `TransactionRowModel` strings. No full-table fetch.

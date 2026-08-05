@@ -31,6 +31,12 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let categoryLocked: Bool
     /// Local-only user tags; sync never invents or clears these.
     public let tagIDs: [TagID]
+    /// Tags the user removed that rules must not re-add.
+    public let suppressedTagIDs: [TagID]
+    /// Local-only LLM/heuristic merchant title cache; sync never invents or clears unless description changes.
+    public let enrichedTitle: String?
+    /// Local-only location cache paired with `enrichedTitle`.
+    public let enrichedLocation: String?
 
     public init(
         id: TransactionID,
@@ -44,7 +50,10 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         userEditedCategory: Bool = false,
         isPending: Bool = false,
         categoryLocked: Bool = false,
-        tagIDs: [TagID] = []
+        tagIDs: [TagID] = [],
+        suppressedTagIDs: [TagID] = [],
+        enrichedTitle: String? = nil,
+        enrichedLocation: String? = nil
     ) {
         self.id = id
         self.accountID = accountID
@@ -58,6 +67,51 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         self.isPending = isPending
         self.categoryLocked = categoryLocked
         self.tagIDs = tagIDs
+        self.suppressedTagIDs = suppressedTagIDs
+        self.enrichedTitle = enrichedTitle
+        self.enrichedLocation = enrichedLocation
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, accountID, externalID, amount, postedDate, description
+        case categoryID, currencyCode, userEditedCategory, isPending
+        case categoryLocked, tagIDs, suppressedTagIDs, enrichedTitle, enrichedLocation
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(TransactionID.self, forKey: .id)
+        accountID = try container.decode(AccountID.self, forKey: .accountID)
+        externalID = try container.decode(String.self, forKey: .externalID)
+        amount = try container.decode(Decimal.self, forKey: .amount)
+        postedDate = try container.decode(Date.self, forKey: .postedDate)
+        description = try container.decode(String.self, forKey: .description)
+        categoryID = try container.decode(CategoryID.self, forKey: .categoryID)
+        currencyCode = try container.decodeIfPresent(String.self, forKey: .currencyCode) ?? "USD"
+        userEditedCategory = try container.decodeIfPresent(Bool.self, forKey: .userEditedCategory) ?? false
+        isPending = try container.decodeIfPresent(Bool.self, forKey: .isPending) ?? false
+        categoryLocked = try container.decodeIfPresent(Bool.self, forKey: .categoryLocked) ?? false
+        tagIDs = try container.decodeIfPresent([TagID].self, forKey: .tagIDs) ?? []
+        suppressedTagIDs = try container.decodeIfPresent([TagID].self, forKey: .suppressedTagIDs) ?? []
+        enrichedTitle = try container.decodeIfPresent(String.self, forKey: .enrichedTitle)
+        enrichedLocation = try container.decodeIfPresent(String.self, forKey: .enrichedLocation)
+    }
+
+    /// Display title: enrichment cache when present, else heuristic parse.
+    public var displayTitle: String {
+        if let enrichedTitle, !enrichedTitle.isEmpty {
+            return enrichedTitle
+        }
+        return ParseTransactionDescriptionUseCase.execute(description).title
+    }
+
+    /// Display location: enrichment cache when present, else heuristic parse.
+    public var displayLocation: String? {
+        if let enrichedTitle, !enrichedTitle.isEmpty {
+            let trimmed = enrichedLocation?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (trimmed?.isEmpty == false) ? trimmed : nil
+        }
+        return ParseTransactionDescriptionUseCase.execute(description).location
     }
 
     public var category: Category {

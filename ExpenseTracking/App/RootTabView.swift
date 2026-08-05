@@ -20,14 +20,16 @@ struct RootTabView: View {
                 connectivity: container.connectivity
             )
         )
-        _transactionsViewModel = State(
+            _transactionsViewModel = State(
             initialValue: TransactionsViewModel(
                 transactionRepository: container.transactionRepository,
                 accountRepository: container.accountRepository,
                 tagRepository: container.tagRepository,
                 syncServing: container.syncServing,
                 ruleRepository: container.categorizationRuleRepository,
-                ruleApplying: container.categorizationRuleApplying
+                ruleApplying: container.categorizationRuleApplying,
+                ruleDrafting: container.categorizationRuleDrafting,
+                availabilityChecker: container.onDeviceModelAvailability
             )
         )
         _insightsViewModel = State(
@@ -63,7 +65,16 @@ struct RootTabView: View {
             .tag(AppTab.home)
 
             NavigationStack {
-                TransactionsView(viewModel: transactionsViewModel)
+                TransactionsView(
+                    viewModel: transactionsViewModel,
+                    makeAssistantViewModel: {
+                        AssistantViewModel(
+                            availabilityChecker: container.onDeviceModelAvailability,
+                            assistant: container.transactionAssistant,
+                            transactionRepository: container.transactionRepository
+                        )
+                    }
+                )
             }
             .tabItem { Label("Transactions", systemImage: "list.bullet") }
             .tag(AppTab.transactions)
@@ -89,36 +100,32 @@ struct RootTabView: View {
             .tag(AppTab.insights)
 
             NavigationStack {
-                AccountsView(viewModel: accountsViewModel) { accountID in
-                    Task {
-                        await transactionsViewModel.focusAccount(accountID)
-                        selectedTab = .transactions
-                    }
-                }
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        NavigationLink {
-                            SettingsView(
-                                viewModel: SettingsViewModel(
-                                    ruleRepository: container.categorizationRuleRepository,
-                                    ruleApplying: container.categorizationRuleApplying,
-                                    accountRepository: container.accountRepository,
-                                    appLock: appLockViewModel
-                                )
-                            )
-                        } label: {
-                            Image(systemName: "gearshape")
+                SettingsView(
+                    viewModel: SettingsViewModel(
+                        ruleRepository: container.categorizationRuleRepository,
+                        ruleApplying: container.categorizationRuleApplying,
+                        accountRepository: container.accountRepository,
+                        tagRepository: container.tagRepository,
+                        ruleDrafting: container.categorizationRuleDrafting,
+                        availabilityChecker: container.onDeviceModelAvailability,
+                        appLock: appLockViewModel
+                    ),
+                    accountsViewModel: accountsViewModel,
+                    onSelectAccount: { accountID in
+                        Task {
+                            await transactionsViewModel.focusAccount(accountID)
+                            selectedTab = .transactions
                         }
                     }
-                }
+                )
             }
-            .tabItem { Label("Accounts", systemImage: "building.columns") }
-            .tag(AppTab.accounts)
+            .tabItem { Label("Settings", systemImage: "gearshape") }
+            .tag(AppTab.settings)
         }
         .sheet(isPresented: $accountsViewModel.showOnboarding, onDismiss: {
             // Present link sheet only after onboarding fully dismisses (stacked sheets fail).
             if accountsViewModel.pendingLinkAfterOnboarding {
-                selectedTab = .accounts
+                selectedTab = .settings
                 accountsViewModel.presentPendingLinkIfNeeded()
             }
         }) {
@@ -163,7 +170,7 @@ struct RootTabView: View {
         }
         .onChange(of: accountsViewModel.showLinkSheet) { _, isPresented in
             if isPresented {
-                selectedTab = .accounts
+                selectedTab = .settings
             }
         }
         .onChange(of: accountsViewModel.storeEpoch) { _, _ in
@@ -177,13 +184,18 @@ struct RootTabView: View {
             switch tab {
             case .home:
                 Task { await homeViewModel.reload(preferLoadingIndicator: false) }
-            case .accounts:
+            case .settings:
                 // Home / Transactions sync can update durable syncIssue while this tab is idle.
                 Task { await accountsViewModel.refreshStatus() }
             case .insights:
                 Task { await insightsViewModel.reload(preferLoadingIndicator: false) }
             case .transactions:
-                Task { await transactionsViewModel.refreshTagsIfNeeded() }
+                // Assistant (and other mutations) may have changed categories/tags while
+                // this tab stayed mounted — reload so the list/editor aren't stale.
+                Task {
+                    await transactionsViewModel.refreshTagsIfNeeded()
+                    await transactionsViewModel.resetAndLoad()
+                }
             }
         }
         .overlay {

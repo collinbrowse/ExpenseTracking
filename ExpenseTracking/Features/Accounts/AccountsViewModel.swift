@@ -32,6 +32,24 @@ final class AccountsViewModel {
         !connection.isLinked && !accounts.isEmpty
     }
 
+    /// True when any linked account still carries a Bridge sync issue from the last pull.
+    var hasAccountSyncIssues: Bool {
+        connection.isLinked && accounts.contains(where: \.hasSyncIssue)
+    }
+
+    /// Connection row label — soft Bridge failures are not "Linked" / OK.
+    var connectionStatusLabel: String {
+        guard connection.isLinked else { return "Not linked" }
+        if connection.needsReauth { return "Reconnect required" }
+        if hasAccountSyncIssues { return "Needs attention" }
+        return "Linked"
+    }
+
+    /// Offer reclaim/relink when access was revoked or an account still has a sync issue.
+    var showsReconnectAction: Bool {
+        connection.isLinked && (connection.needsReauth || hasAccountSyncIssues)
+    }
+
     /// Per-row sync health for the Accounts list. Healthy only when linked and issue-free.
     func syncDisplay(for account: Account) -> AccountSyncDisplay {
         guard connection.isLinked else { return .none }
@@ -370,33 +388,7 @@ final class AccountsViewModel {
     }
 
     private func userFacingMessage(for error: Error, fallback: String) -> String {
-        if let cashFlowError = error as? CashFlowError {
-            switch cashFlowError {
-            case .unauthorized:
-                return "Authorization failed. Create a new SimpleFIN token and try again."
-            case .paymentRequired:
-                return "SimpleFIN requires an active subscription."
-            case .transport(let message):
-                return message.isEmpty ? fallback : message
-            case .decoding(let message):
-                return message.isEmpty ? fallback : "Couldn't read the server response. \(message)"
-            case .persistence(let message):
-                return message.isEmpty ? fallback : message
-            case .providerMessages(let messages):
-                let joined = messages.joined(separator: " ")
-                return joined.isEmpty ? fallback : joined
-            case .notLinked:
-                return "No account is linked."
-            case .cancelled:
-                return "Cancelled."
-            case .authenticationUnavailable:
-                return "Device authentication is unavailable. Set a passcode in Settings."
-            case .authenticationFailed:
-                return "Authentication failed. Try again."
-            }
-        }
-        let description = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        return description.isEmpty ? fallback : description
+        CashFlowError.userFacingMessage(for: error, fallback: fallback)
     }
 
     private func completeOnboarding() {

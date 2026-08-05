@@ -25,6 +25,8 @@ final class TransactionsViewModel {
     private let syncServing: any SyncServing
     private let ruleRepository: any CategorizationRuleRepository
     private let ruleApplying: any CategorizationRuleApplying
+    private let ruleDrafting: (any CategorizationRuleDrafting)?
+    private let availabilityChecker: (any OnDeviceModelAvailabilityChecking)?
 
     var rows: [TransactionRowModel] = []
     var accounts: [Account] = []
@@ -66,7 +68,9 @@ final class TransactionsViewModel {
         tagRepository: any TagRepository,
         syncServing: any SyncServing,
         ruleRepository: any CategorizationRuleRepository,
-        ruleApplying: any CategorizationRuleApplying
+        ruleApplying: any CategorizationRuleApplying,
+        ruleDrafting: (any CategorizationRuleDrafting)? = nil,
+        availabilityChecker: (any OnDeviceModelAvailabilityChecking)? = nil
     ) {
         self.transactionRepository = transactionRepository
         self.accountRepository = accountRepository
@@ -74,6 +78,8 @@ final class TransactionsViewModel {
         self.syncServing = syncServing
         self.ruleRepository = ruleRepository
         self.ruleApplying = ruleApplying
+        self.ruleDrafting = ruleDrafting
+        self.availabilityChecker = availabilityChecker
     }
 
     var filter: TransactionFilter {
@@ -286,7 +292,10 @@ final class TransactionsViewModel {
             cursor = page.nextCursor
             hasMore = page.hasMore
         } catch {
-            bannerMessage = "Couldn't load transactions."
+            bannerMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't load transactions."
+            )
         }
     }
 
@@ -295,7 +304,11 @@ final class TransactionsViewModel {
             _ = try await syncServing.syncNow()
             bannerMessage = nil
         } catch {
-            bannerMessage = "Couldn't refresh. Showing last saved data."
+            let detail = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't refresh."
+            )
+            bannerMessage = "\(detail) Showing last saved data."
         }
         await refreshAccounts()
         await refreshTags()
@@ -306,18 +319,61 @@ final class TransactionsViewModel {
         selectedTransactionID = id
         newTagName = ""
         if let row = rows.first(where: { $0.id == id }) {
-            editingDescription = row.title
-            editingCategoryID = row.categoryID
-            editingCategoryLocked = row.categoryLocked
-            editingTagIDs = Set(row.tagIDs)
-            editingAccountName = row.accountName
-            editingLocation = row.location
+            applyEditorFields(from: row)
         }
         Task {
             // Load tags before matching rules so the Tags section is populated
             // when the medium detent sheet appears.
             await refreshTags()
+            // Prefer store state over a possibly stale list row (e.g. after Assistant).
+            await hydrateEditorFromStore(id: id)
             await refreshMatchingRules()
+            await reapplyIfCategoryOutOfSync(for: id)
+        }
+    }
+
+    /// If an unlocked row matches a categorize rule but still has another category,
+    /// re-run rules so the editor reflects what the rule engine would apply.
+    private func reapplyIfCategoryOutOfSync(for id: TransactionID) async {
+        guard !editingCategoryLocked,
+              let rule = matchingRules.first(where: \.appliesCategory),
+              rule.categoryID != editingCategoryID
+        else { return }
+        do {
+            _ = try await ruleApplying.reapplyAllRules()
+            await hydrateEditorFromStore(id: id)
+            await refreshMatchingRules()
+        } catch {
+            // Leave the editor on the hydrated snapshot; Save can still persist manual edits.
+        }
+    }
+
+    private func applyEditorFields(from row: TransactionRowModel) {
+        editingDescription = row.title
+        editingCategoryID = row.categoryID
+        editingCategoryLocked = row.categoryLocked
+        editingTagIDs = Set(row.tagIDs)
+        editingAccountName = row.accountName
+        editingLocation = row.location
+    }
+
+    private func hydrateEditorFromStore(id: TransactionID) async {
+        do {
+            let transactions = try await transactionRepository.fetchAllForCategorization()
+            guard let transaction = transactions.first(where: { $0.id == id }) else { return }
+            let row = TransactionRowModel(
+                transaction: transaction,
+                accountName: accountNames[transaction.accountID]
+                    ?? accounts.first(where: { $0.id == transaction.accountID })?.name
+                    ?? "Account",
+                tagNamesByID: tagNames
+            )
+            applyEditorFields(from: row)
+            if let index = rows.firstIndex(where: { $0.id == id }) {
+                rows[index] = row
+            }
+        } catch {
+            // Keep the list-row snapshot already applied in openEditor.
         }
     }
 
@@ -351,7 +407,10 @@ final class TransactionsViewModel {
             }
             editingTagIDs.insert(tag.id)
         } catch {
-            bannerMessage = "Couldn't create tag."
+            bannerMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't create tag."
+            )
         }
     }
 
@@ -360,6 +419,9 @@ final class TransactionsViewModel {
             ruleRepository: ruleRepository,
             ruleApplying: ruleApplying,
             accountRepository: accountRepository,
+            tagRepository: tagRepository,
+            ruleDrafting: ruleDrafting,
+            availabilityChecker: availabilityChecker,
             prefillTitle: editingDescription,
             prefillCategoryID: editingCategoryID
         )
@@ -371,6 +433,9 @@ final class TransactionsViewModel {
             ruleRepository: ruleRepository,
             ruleApplying: ruleApplying,
             accountRepository: accountRepository,
+            tagRepository: tagRepository,
+            ruleDrafting: ruleDrafting,
+            availabilityChecker: availabilityChecker,
             existing: rule
         )
         showRuleEditor = true
@@ -415,25 +480,39 @@ final class TransactionsViewModel {
             title: editingDescription,
             location: editingLocation
         )
+        let probe = Transaction(
+            id: row.id,
+            accountID: row.accountID,
+            externalID: row.id.rawValue,
+            amount: row.amount,
+            postedDate: .now,
+            description: description,
+            categoryID: editingCategoryID,
+            categoryLocked: editingCategoryLocked,
+            tagIDs: Array(editingTagIDs),
+            enrichedTitle: editingDescription,
+            enrichedLocation: editingLocation
+        )
         do {
             let rules = try await ruleRepository.fetchAll()
-            matchingRules = CategorizationRuleMatcher.matchingRules(
-                rules,
-                description: description,
-                amount: row.amount,
-                accountID: row.accountID
-            )
+            matchingRules = CategorizationRuleMatcher.matchingRules(rules, transaction: probe)
         } catch {
             matchingRules = []
         }
     }
 
     func ruleSummary(for rule: CategorizationRule) -> String {
-        CategorizationConditionFormatting.summary(for: rule.conditions) { [self] accountID in
-            accountNames[accountID]
-                ?? accounts.first(where: { $0.id == accountID })?.name
-                ?? "Account"
-        }
+        CategorizationConditionFormatting.summary(
+            for: rule.conditions,
+            accountName: { [self] accountID in
+                accountNames[accountID]
+                    ?? accounts.first(where: { $0.id == accountID })?.name
+                    ?? "Account"
+            },
+            tagName: { [self] tagID in
+                tagNames[tagID] ?? "Tag"
+            }
+        )
     }
 
     func ruleTitle(for rule: CategorizationRule) -> String {
@@ -505,7 +584,10 @@ final class TransactionsViewModel {
                 tagNamesByID: tagNames
             )
         } catch {
-            bannerMessage = "Couldn't save changes."
+            bannerMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't save changes."
+            )
         }
     }
 

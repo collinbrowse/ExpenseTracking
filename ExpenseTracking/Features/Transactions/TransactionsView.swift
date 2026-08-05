@@ -3,8 +3,11 @@ import CashFlowKit
 
 struct TransactionsView: View {
     @Bindable var viewModel: TransactionsViewModel
+    var makeAssistantViewModel: (() -> AssistantViewModel)?
     @State private var editorDetent: PresentationDetent = .large
     @State private var isComposingTag = false
+    /// `sheet(item:)` so the first present always has a ViewModel (Bool + optional races empty).
+    @State private var presentedAssistant: PresentedAssistant?
 
     var body: some View {
         List {
@@ -76,6 +79,21 @@ struct TransactionsView: View {
         .accessibilityIdentifier("transactions.list")
         .searchable(text: $viewModel.searchText, prompt: "Search")
         .toolbar {
+            if makeAssistantViewModel != nil {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        if let makeAssistantViewModel {
+                            presentedAssistant = PresentedAssistant(
+                                viewModel: makeAssistantViewModel()
+                            )
+                        }
+                    } label: {
+                        Image(systemName: "sparkles")
+                    }
+                    .accessibilityLabel("Assistant")
+                    .accessibilityIdentifier("transactions.assistant")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     viewModel.showFilters = true
@@ -102,6 +120,13 @@ struct TransactionsView: View {
         }
         .sheet(isPresented: $viewModel.showFilters) {
             filtersSheet
+        }
+        .sheet(item: $presentedAssistant, onDismiss: {
+            Task { await viewModel.resetAndLoad() }
+        }) { presented in
+            NavigationStack {
+                AssistantView(viewModel: presented.viewModel)
+            }
         }
         .sheet(isPresented: Binding(
             get: { viewModel.selectedTransactionID != nil },
@@ -465,4 +490,10 @@ private struct TransactionRowView: View {
         }
         .contentShape(Rectangle())
     }
+}
+
+/// Identifiable wrapper so `sheet(item:)` always presents with a live ViewModel.
+private struct PresentedAssistant: Identifiable {
+    let id = UUID()
+    let viewModel: AssistantViewModel
 }

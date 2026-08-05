@@ -103,6 +103,9 @@ struct CategorizationRulesView: View {
             ruleRepository: viewModel.ruleRepository,
             ruleApplying: viewModel.ruleApplying,
             accountRepository: viewModel.accountRepository,
+            tagRepository: viewModel.tagRepository,
+            ruleDrafting: viewModel.ruleDrafting,
+            availabilityChecker: viewModel.availabilityChecker,
             existing: existing,
             prefillTitle: prefillTitle,
             prefillCategoryID: prefillCategoryID
@@ -111,19 +114,25 @@ struct CategorizationRulesView: View {
 
     private func ruleRow(_ rule: CategorizationRule) -> some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: rule.appliesCategory
-                ? CategoryIcon.systemName(for: rule.categoryID)
-                : "pencil")
+            Image(systemName: ruleIcon(for: rule))
                 .font(.body)
                 .frame(width: 28, height: 28)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(ruleTitle(for: rule))
-                    .font(.body.weight(.semibold))
+                HStack(spacing: 6) {
+                    Text(ruleTitle(for: rule))
+                        .font(.body.weight(.semibold))
+                    if rule.createdByAssistant {
+                        Image(systemName: "sparkles")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Created by Assistant")
+                    }
+                }
                 Text(viewModel.summary(for: rule))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(4)
             }
 
             Spacer(minLength: 8)
@@ -142,13 +151,27 @@ struct CategorizationRulesView: View {
         }
     }
 
+    private func ruleIcon(for rule: CategorizationRule) -> String {
+        if rule.appliesCategory {
+            return CategoryIcon.systemName(for: rule.categoryID)
+        }
+        if !rule.tagIDs.isEmpty {
+            return "tag"
+        }
+        return "pencil"
+    }
+
     private func ruleTitle(for rule: CategorizationRule) -> String {
         if rule.appliesCategory {
             return SystemCategory.category(for: rule.categoryID).name
         }
+        if !rule.tagIDs.isEmpty {
+            let names = rule.tagIDs.map { viewModel.tagName(for: $0) }.joined(separator: ", ")
+            return "Add tags: \(names)"
+        }
         if let renameTitle = rule.renameTitle {
             return "Rename to “\(renameTitle)”"
         }
-        return "Rename"
+        return "Rule"
     }
 }

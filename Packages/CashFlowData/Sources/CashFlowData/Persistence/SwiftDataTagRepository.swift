@@ -75,7 +75,44 @@ public actor SwiftDataTagRepository: TagRepository {
         // Clear memberships before delete so relationship inverses stay consistent.
         entity.transactions = []
         context.delete(entity)
+        try Self.stripTagReferences(tagID: id, context: context)
         try context.save()
+    }
+
+    /// Removes a deleted tag from rule conditions/actions and transaction suppressions.
+    private static func stripTagReferences(tagID: TagID, context: ModelContext) throws {
+        let rules = try context.fetch(FetchDescriptor<CategorizationRuleEntity>())
+        for rule in rules {
+            var conditions = (try? JSONDecoder().decode(
+                [CategorizationCondition].self,
+                from: rule.conditionsData
+            )) ?? []
+            let beforeCount = conditions.count
+            conditions.removeAll {
+                if case .hasTag(let id) = $0 { return id == tagID }
+                return false
+            }
+            if conditions.count != beforeCount {
+                rule.conditionsData = try JSONEncoder().encode(conditions)
+                if conditions.isEmpty {
+                    rule.isEnabled = false
+                }
+            }
+            let tagIDs = EntityMappers.decodeTagIDs(rule.tagIDsData)
+            let filtered = tagIDs.filter { $0 != tagID }
+            if filtered.count != tagIDs.count {
+                rule.tagIDsData = try EntityMappers.encodeTagIDs(filtered)
+            }
+        }
+
+        let transactions = try context.fetch(FetchDescriptor<TransactionEntity>())
+        for transaction in transactions {
+            let suppressed = EntityMappers.decodeTagIDs(transaction.suppressedTagIDsData)
+            let filtered = suppressed.filter { $0 != tagID }
+            if filtered.count != suppressed.count {
+                transaction.suppressedTagIDsData = try EntityMappers.encodeTagIDs(filtered)
+            }
+        }
     }
 
     /// Used by erase-everything and local wipe — not kept across clear-local.

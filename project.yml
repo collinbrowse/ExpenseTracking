@@ -1,15 +1,15 @@
 name: ExpenseTracking
 options:
-  bundleIdPrefix: com.expensetracking
+  bundleIdPrefix: com.collinbrowse.expensetracking
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
   createIntermediateGroups: true
   developmentLanguage: en
 settings:
   base:
     SWIFT_VERSION: "6.0"
     TARGETED_DEVICE_FAMILY: "1"
-    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     SWIFT_STRICT_CONCURRENCY: complete
 packages:
   CashFlowKit:
@@ -24,7 +24,7 @@ targets:
       - path: ExpenseTracking
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.expensetracking.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.collinbrowse.expensetracking.app
         INFOPLIST_KEY_CFBundleDisplayName: Cash Flow
         INFOPLIST_KEY_NSFaceIDUsageDescription: Cash Flow uses Face ID to unlock the app when app lock is enabled.
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -56,7 +56,7 @@ targets:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.expensetracking.app.widget
+        PRODUCT_BUNDLE_IDENTIFIER: com.collinbrowse.expensetracking.app.widget
         GENERATE_INFOPLIST_FILE: NO
         CURRENT_PROJECT_VERSION: "1"
         MARKETING_VERSION: "1.0.0"
@@ -75,7 +75,7 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.expensetracking.app.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.collinbrowse.expensetracking.app.tests
     dependencies:
       - target: ExpenseTracking
       - package: CashFlowKit
