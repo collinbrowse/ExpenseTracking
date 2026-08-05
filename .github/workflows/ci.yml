@@ -7,14 +7,14 @@ on:
 
 jobs:
   architecture:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Architecture boundaries
         run: scripts/check_architecture.sh
 
   package-tests:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: CashFlowKit tests
@@ -23,7 +23,7 @@ jobs:
         run: cd Packages/CashFlowData && swift test
 
   ios-tests:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
