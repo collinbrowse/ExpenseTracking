@@ -16,6 +16,7 @@ public enum CashFlowSchemaV1: VersionedSchema {
             TransactionEntity.self,
             ConnectionEntity.self,
             CategorizationRuleEntity.self,
+            TagEntity.self,
         ]
     }
 }
@@ -94,6 +95,10 @@ public final class TransactionEntity {
 
     public var account: AccountEntity?
 
+    /// Local-only tags; sync upserts never clear this relationship.
+    @Relationship(inverse: \TagEntity.transactions)
+    public var tags: [TagEntity] = []
+
     public init(
         id: String,
         externalID: String,
@@ -122,6 +127,7 @@ public final class TransactionEntity {
         self.syncKey = syncKey
         self.account = account
         self.categoryLocked = categoryLocked
+        self.tags = []
     }
 }
 
@@ -182,5 +188,20 @@ public final class CategorizationRuleEntity {
         self.conditionsData = conditionsData
         self.renameTitle = renameTitle
         self.appliesCategory = appliesCategory
+    }
+}
+
+@Model
+public final class TagEntity {
+    @Attribute(.unique) public var id: String
+    public var name: String
+    public var createdAt: Date
+    public var transactions: [TransactionEntity] = []
+
+    public init(id: String, name: String, createdAt: Date = .now) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.transactions = []
     }
 }

@@ -12,6 +12,7 @@ Snapshot of what this repo actually ships today. Keep this file honest when feat
 - Press-and-drag scrubbing with callout; Reduce Motion respected
 - Pull-to-refresh sync; offline / error banners
 - Empty, loading, and populated states (no cross-fade stack on first load)
+- Quiet ranges (e.g. Month with no posts yet) stay on the cash-flow UI with $0 — not the “No activity yet” empty state — when the store already has history
 
 Code: `ExpenseTracking/Features/Home/`
 
@@ -19,12 +20,23 @@ Code: `ExpenseTracking/Features/Home/`
 
 - Bank-style list grouped by month (headers scroll with content)
 - **Keyset pagination** (page size 50); loads more near the end of the list
-- Filters (sheet): account, category, date (All / Month / 30d / Year / Custom)
-- Search over **already loaded** rows: title, category, account, amount digits (e.g. `66` → `$66.43`)
-- Edit sheet: category + description (no delete in MVP)
+- Filters (sheet): account, category, tag, date (All / Month / 30d / Year / Custom)
+- Search over **already loaded** rows: title, category, tags, account, amount digits (e.g. `66` → `$66.43`)
+- Edit sheet: category + description + multi-select tags (no delete in MVP)
 - Pull-to-refresh sync
 
 Code: `ExpenseTracking/Features/Transactions/`
+
+### Tags & Insights
+
+- User-defined **tags** (many-to-many, local-only) orthogonal to system categories — e.g. “Japan Trip”, “Local Concert”
+- Sync never invents or clears tags; wipe/relink clears tags with local accounts/transactions
+- **Insights** tab: range picker (same options as Home), total spent, horizontal bar charts + lists for spending by category and by tag
+- Combine filters by tapping a category and a tag (AND scope); **View transactions** opens the list with that scope + date range
+- Manage Tags sheet (create / rename / delete); create tag from transaction editor
+- Multi-tagged expenses count their full amount toward **each** tag in Insights
+
+Code: `CashFlowKit` (Tag + breakdown use case), `CashFlowData` (TagEntity), `ExpenseTracking/Features/Insights/`
 
 ### Accounts & onboarding
 
@@ -86,7 +98,7 @@ Code: `ExpenseTrackingWidget/`
 
 - Domain tests (`CashFlowKit`): net contribution, exclusions, ranges
 - Data tests (`CashFlowData`): merge, demo net, sync-related coverage
-- App tests (`ExpenseTrackingTests`): Home ViewModel, App Lock ViewModel, amount search helpers
+- App tests (`ExpenseTrackingTests`): Home ViewModel, Insights ViewModel, App Lock ViewModel, amount search helpers
 - `scripts/check_architecture.sh` + GitHub Actions CI
 
 ### Categorization
@@ -117,7 +129,8 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 - JSON / CSV export, cloud backup, multi-device sync
 - CSV import, Plaid (or other aggregators requiring a backend)
 - Delete transaction API (forbidden for MVP)
-- Budgets, multi-currency, analytics, marketing screenshot pack
+- Budgets, multi-currency, marketing screenshot pack
+- Auto-tagging rules / ML; tag date ranges or event budgets; splitting one amount across tags
 
 ### Categorization roadmap (remaining)
 
@@ -133,4 +146,5 @@ Explore on-device models (Create ML / Core ML) trained on the user’s correctio
 3. Transactions list scrolls; filters and search work on loaded rows
 4. Edit a category → Sync Now → category should stick (unless an unlocked matching rule applies)
 5. Settings → Categorization Rules → add a rule → matching unlocked txs update
-6. Widget (after sync) reflects This Month snapshot when App Group is available
+6. Edit a transaction → add a tag → Insights shows spend by that tag for the selected range
+7. Widget (after sync) reflects This Month snapshot when App Group is available

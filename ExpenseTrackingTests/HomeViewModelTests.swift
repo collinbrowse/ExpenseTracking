@@ -92,6 +92,44 @@ struct HomeViewModelTests {
         await deepVM.reload()
         #expect(deepVM.availableRangeOptions.contains(.lastYear))
     }
+
+    @Test("Empty month still shows populated UI when store has older history")
+    func emptyMonthKeepsPopulatedState() async {
+        let now = Date()
+        let lastMonth = Calendar.current.date(byAdding: .month, value: -1, to: now) ?? now
+        let repo = MockTransactionRepository(
+            transactions: [
+                Transaction(
+                    id: TransactionID("1"),
+                    accountID: AccountID("a"),
+                    externalID: "1",
+                    amount: -40,
+                    postedDate: lastMonth,
+                    description: "Old spend",
+                    categoryID: SystemCategory.dining.id
+                ),
+            ]
+        )
+        let vm = HomeViewModel(
+            transactionRepository: repo,
+            syncServing: MockSyncServing(),
+            calculateNetCashFlow: CalculateNetCashFlowUseCase(),
+            connectivity: ConnectivityMonitor()
+        )
+        vm.selectedOption = .last30Days
+        await vm.reload()
+        #expect(vm.hasStoreHistory)
+        #expect(vm.displayState == .populated)
+
+        vm.selectOption(.month)
+        // Allow scheduled reload to finish.
+        await vm.reload(preferLoadingIndicator: false)
+        #expect(vm.selectedOption == .month)
+        #expect(vm.hasStoreHistory)
+        #expect(!vm.hasData)
+        #expect(vm.displayState == .populated)
+        #expect(vm.result.net == 0)
+    }
 }
 
 private struct MockTransactionRepository: TransactionRepository {
@@ -106,11 +144,16 @@ private struct MockTransactionRepository: TransactionRepository {
     }
 
     func fetchPosted(in range: CashFlowDateRange, now: Date) async throws -> [Transaction] {
-        transactions
+        let interval = range.interval(now: now)
+        return transactions.filter { tx in
+            !tx.isPending
+                && tx.postedDate >= interval.start
+                && tx.postedDate <= interval.end
+        }
     }
 
     func earliestPostedDate() async throws -> Date? {
-        transactions.map(\.postedDate).min()
+        transactions.filter { !$0.isPending }.map(\.postedDate).min()
     }
 
     func updateCategory(
@@ -119,6 +162,7 @@ private struct MockTransactionRepository: TransactionRepository {
         categoryLocked: Bool
     ) async throws {}
     func updateDescription(transactionID: TransactionID, description: String) async throws {}
+    func updateTags(transactionID: TransactionID, tagIDs: [TagID]) async throws {}
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {}
     func fetchAllForCategorization() async throws -> [Transaction] { transactions }
 }

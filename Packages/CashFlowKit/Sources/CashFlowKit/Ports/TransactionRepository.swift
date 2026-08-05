@@ -26,6 +26,12 @@ public protocol TransactionRepository: Sendable {
         description: String
     ) async throws
 
+    /// Replaces the transaction’s local tag memberships.
+    func updateTags(
+        transactionID: TransactionID,
+        tagIDs: [TagID]
+    ) async throws
+
     /// Store-wide write for categorization rule re-apply. Not for list UI.
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws
 

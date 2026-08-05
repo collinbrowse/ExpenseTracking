@@ -4,15 +4,18 @@ public struct TransactionFilter: Hashable, Sendable {
     public var accountID: AccountID?
     public var dateRange: CashFlowDateRange?
     public var categoryID: CategoryID?
+    public var tagID: TagID?
 
     public init(
         accountID: AccountID? = nil,
         dateRange: CashFlowDateRange? = nil,
-        categoryID: CategoryID? = nil
+        categoryID: CategoryID? = nil,
+        tagID: TagID? = nil
     ) {
         self.accountID = accountID
         self.dateRange = dateRange
         self.categoryID = categoryID
+        self.tagID = tagID
     }
 
     public static let all = TransactionFilter()

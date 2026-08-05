@@ -33,7 +33,8 @@ public enum MergeSyncPolicy: Sendable {
                 currencyCode: remote.currencyCode,
                 userEditedCategory: resolved.matchedUserRule,
                 isPending: remote.isPending,
-                categoryLocked: false
+                categoryLocked: false,
+                tagIDs: []
             )
         }
 
@@ -110,7 +111,8 @@ public enum MergeSyncPolicy: Sendable {
             currencyCode: remote.currencyCode,
             userEditedCategory: userEdited,
             isPending: remote.isPending,
-            categoryLocked: locked
+            categoryLocked: locked,
+            tagIDs: local.tagIDs
         )
     }
 

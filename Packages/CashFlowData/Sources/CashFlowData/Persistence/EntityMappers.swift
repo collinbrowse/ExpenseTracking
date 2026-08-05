@@ -17,6 +17,7 @@ enum EntityMappers {
 
     static func transaction(from entity: TransactionEntity) -> Transaction {
         let resolvedAccountID = entity.account?.id ?? entity.accountID
+        let tagIDs = entity.tags.map { TagID($0.id) }.sorted { $0.rawValue < $1.rawValue }
         return Transaction(
             id: TransactionID(entity.id),
             accountID: AccountID(resolvedAccountID),
@@ -28,7 +29,16 @@ enum EntityMappers {
             currencyCode: entity.currencyCode,
             userEditedCategory: entity.userEditedCategory,
             isPending: entity.isPending,
-            categoryLocked: entity.categoryLocked
+            categoryLocked: entity.categoryLocked,
+            tagIDs: tagIDs
+        )
+    }
+
+    static func tag(from entity: TagEntity) -> Tag {
+        Tag(
+            id: TagID(entity.id),
+            name: entity.name,
+            createdAt: entity.createdAt
         )
     }
 

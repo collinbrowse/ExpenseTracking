@@ -94,6 +94,32 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         try context.save()
     }
 
+    public func updateTags(
+        transactionID: TransactionID,
+        tagIDs: [TagID]
+    ) async throws {
+        let context = ModelContext(modelContainer)
+        let id = transactionID.rawValue
+        let predicate = #Predicate<TransactionEntity> { $0.id == id }
+        var descriptor = FetchDescriptor<TransactionEntity>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        guard let entity = try context.fetch(descriptor).first else {
+            throw CashFlowError.persistence(message: "Transaction not found")
+        }
+        let uniqueIDs = Array(Set(tagIDs.map(\.rawValue)))
+        if uniqueIDs.isEmpty {
+            entity.tags = []
+        } else {
+            let tagPredicate = #Predicate<TagEntity> { uniqueIDs.contains($0.id) }
+            let tags = try context.fetch(FetchDescriptor<TagEntity>(predicate: tagPredicate))
+            guard tags.count == uniqueIDs.count else {
+                throw CashFlowError.persistence(message: "One or more tags were not found.")
+            }
+            entity.tags = tags
+        }
+        try context.save()
+    }
+
     public func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {
         guard !assignments.isEmpty else { return }
         let context = ModelContext(modelContainer)
@@ -193,6 +219,11 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         }
         if let categoryID = filter.categoryID?.rawValue, entity.categoryID != categoryID {
             return false
+        }
+        if let tagID = filter.tagID?.rawValue {
+            guard entity.tags.contains(where: { $0.id == tagID }) else {
+                return false
+            }
         }
         if let dateInterval {
             if entity.postedDate < dateInterval.start || entity.postedDate > dateInterval.end {
