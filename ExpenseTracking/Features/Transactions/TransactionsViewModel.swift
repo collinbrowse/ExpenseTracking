@@ -50,7 +50,10 @@ final class TransactionsViewModel {
     var editingCategoryLocked = false
     var editingTagIDs: Set<TagID> = []
     var editingAccountName = ""
-    var editingLocation: String?
+    var editingLocation = ""
+    var editingAmountText = ""
+    var editingAmountIsIncome = false
+    var editingRawDescription = ""
     var newTagName = ""
     var matchingRules: [CategorizationRule] = []
     var showRuleEditor = false
@@ -145,6 +148,7 @@ final class TransactionsViewModel {
         return rows.filter { row in
             row.title.localizedCaseInsensitiveContains(query)
                 || row.location?.localizedCaseInsensitiveContains(query) == true
+                || row.rawDescription.localizedCaseInsensitiveContains(query)
                 || row.categoryText.localizedCaseInsensitiveContains(query)
                 || row.tagText?.localizedCaseInsensitiveContains(query) == true
                 || row.accountName.localizedCaseInsensitiveContains(query)
@@ -367,7 +371,10 @@ final class TransactionsViewModel {
         editingCategoryLocked = row.categoryLocked
         editingTagIDs = Set(row.tagIDs)
         editingAccountName = row.accountName
-        editingLocation = row.location
+        editingLocation = row.location ?? ""
+        editingAmountText = row.amountText
+        editingAmountIsIncome = row.amountIsIncome
+        editingRawDescription = row.rawDescription
     }
 
     private func hydrateEditorFromStore(id: TransactionID) async {
@@ -468,7 +475,7 @@ final class TransactionsViewModel {
             editingCategoryLocked = row.categoryLocked
             editingTagIDs = Set(row.tagIDs)
             editingAccountName = row.accountName
-            editingLocation = row.location
+            editingLocation = row.location ?? ""
         }
         await refreshMatchingRules()
     }
@@ -489,22 +496,19 @@ final class TransactionsViewModel {
             matchingRules = []
             return
         }
-        let description = ParsedTransactionDescription.recombine(
-            title: editingDescription,
-            location: editingLocation
-        )
         let probe = Transaction(
             id: row.id,
             accountID: row.accountID,
             externalID: row.id.rawValue,
             amount: row.amount,
             postedDate: .now,
-            description: description,
+            description: row.rawDescription,
             categoryID: editingCategoryID,
             categoryLocked: editingCategoryLocked,
             tagIDs: Array(editingTagIDs),
             enrichedTitle: editingDescription,
-            enrichedLocation: editingLocation
+            enrichedLocation: editingLocation.isEmpty ? nil : editingLocation,
+            titleSource: .user
         )
         do {
             let rules = try await ruleRepository.fetchAll()
@@ -553,10 +557,9 @@ final class TransactionsViewModel {
         guard let id = selectedTransactionID,
               let index = rows.firstIndex(where: { $0.id == id })
         else { return }
-        let storedDescription = ParsedTransactionDescription.recombine(
-            title: editingDescription,
-            location: editingLocation
-        )
+        let trimmedTitle = editingDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+        let trimmedLocation = editingLocation.trimmingCharacters(in: .whitespacesAndNewlines)
         let newCategoryID = editingCategoryID
         let locked = editingCategoryLocked
         let newTagIDs = Array(editingTagIDs).sorted { $0.rawValue < $1.rawValue }
@@ -568,16 +571,19 @@ final class TransactionsViewModel {
                 categoryID: newCategoryID,
                 categoryLocked: locked
             )
-            try await transactionRepository.updateDescription(
+            try await transactionRepository.updateEnrichment(
                 transactionID: id,
-                description: storedDescription
+                title: trimmedTitle,
+                location: trimmedLocation.isEmpty ? nil : trimmedLocation,
+                source: .user,
+                clearLocation: trimmedLocation.isEmpty
             )
             try await transactionRepository.updateTags(
                 transactionID: id,
                 tagIDs: newTagIDs
             )
             selectedTransactionID = nil
-            editingLocation = nil
+            editingLocation = ""
 
             // Active filters no longer match — drop just this row.
             if let filterCategoryID, filterCategoryID != newCategoryID {
@@ -590,7 +596,8 @@ final class TransactionsViewModel {
             }
 
             rows[index] = rows[index].replacing(
-                description: storedDescription,
+                title: trimmedTitle,
+                location: trimmedLocation.isEmpty ? nil : trimmedLocation,
                 categoryID: newCategoryID,
                 categoryLocked: locked,
                 tagIDs: newTagIDs,

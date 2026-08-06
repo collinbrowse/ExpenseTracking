@@ -32,8 +32,8 @@ public enum CategorizationCondition: Hashable, Sendable, Codable {
 
 /// User-defined rule. Lower `priority` wins when multiple rules match.
 ///
-/// - Categorize rules: `appliesCategory == true` (optional rename via `renameTitle`)
-/// - Rename-only rules: `appliesCategory == false` and a non-nil `renameTitle`
+/// - Categorize rules: `appliesCategory == true` (optional rename via `renameTitle` / `renameLocation`)
+/// - Rename-only rules: `appliesCategory == false` and a non-nil rename field
 /// - Tag rules: non-empty `tagIDs` (additive; may combine with categorize/rename)
 public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
     public let id: CategorizationRuleID
@@ -41,8 +41,10 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
     public let priority: Int
     public let isEnabled: Bool
     public let conditions: [CategorizationCondition]
-    /// When set, matching transactions get this merchant title (location preserved).
+    /// When set, matching transactions get this merchant title (enrichment, not description).
     public let renameTitle: String?
+    /// When set, matching transactions get this location (enrichment, not description).
+    public let renameLocation: String?
     /// When false, a matching rule only renames / tags and leaves category unchanged.
     public let appliesCategory: Bool
     /// Tags to add when the rule matches (never clears existing tags).
@@ -59,6 +61,7 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
         isEnabled: Bool = true,
         conditions: [CategorizationCondition],
         renameTitle: String? = nil,
+        renameLocation: String? = nil,
         appliesCategory: Bool = true,
         tagIDs: [TagID] = [],
         createdByAssistant: Bool = false,
@@ -70,6 +73,7 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
         self.isEnabled = isEnabled
         self.conditions = conditions
         self.renameTitle = Self.normalizedRename(renameTitle)
+        self.renameLocation = Self.normalizedRename(renameLocation)
         self.appliesCategory = appliesCategory
         self.tagIDs = tagIDs
         self.createdByAssistant = createdByAssistant
@@ -78,7 +82,7 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
 
     /// True when the rule performs at least one lasting action.
     public var hasAction: Bool {
-        appliesCategory || renameTitle != nil || !tagIDs.isEmpty
+        appliesCategory || renameTitle != nil || renameLocation != nil || !tagIDs.isEmpty
     }
 
     public var canUndoApply: Bool {
@@ -87,7 +91,7 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case id, categoryID, priority, isEnabled, conditions
-        case renameTitle, appliesCategory, tagIDs, createdByAssistant, applySnapshot
+        case renameTitle, renameLocation, appliesCategory, tagIDs, createdByAssistant, applySnapshot
     }
 
     public init(from decoder: Decoder) throws {
@@ -98,6 +102,9 @@ public struct CategorizationRule: Identifiable, Hashable, Sendable, Codable {
         isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
         conditions = try container.decode([CategorizationCondition].self, forKey: .conditions)
         renameTitle = Self.normalizedRename(try container.decodeIfPresent(String.self, forKey: .renameTitle))
+        renameLocation = Self.normalizedRename(
+            try container.decodeIfPresent(String.self, forKey: .renameLocation)
+        )
         appliesCategory = try container.decodeIfPresent(Bool.self, forKey: .appliesCategory) ?? true
         tagIDs = try container.decodeIfPresent([TagID].self, forKey: .tagIDs) ?? []
         createdByAssistant = try container.decodeIfPresent(Bool.self, forKey: .createdByAssistant) ?? false

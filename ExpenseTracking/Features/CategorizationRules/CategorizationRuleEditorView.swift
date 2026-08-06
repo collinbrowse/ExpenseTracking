@@ -9,6 +9,7 @@ struct CategorizationRuleEditorView: View {
     private enum EditorFocus: Hashable {
         case condition(UUID)
         case rename
+        case renameLocation
         case naturalLanguage
     }
 
@@ -78,7 +79,7 @@ struct CategorizationRuleEditorView: View {
             }
 
             Section {
-                Toggle("Rename title", isOn: $viewModel.appliesRename)
+                Toggle("Rename title / location", isOn: $viewModel.appliesRename)
                 if viewModel.appliesRename {
                     valueTextField(
                         focus: .rename,
@@ -86,11 +87,17 @@ struct CategorizationRuleEditorView: View {
                         text: $viewModel.renameTitle,
                         keyboard: .default
                     )
+                    valueTextField(
+                        focus: .renameLocation,
+                        placeholder: "Tap to enter location (optional)",
+                        text: $viewModel.renameLocation,
+                        keyboard: .default
+                    )
                 }
             } header: {
                 Text("Then — Rename")
             } footer: {
-                Text("Matching transactions get this merchant title. Location is kept.")
+                Text("Matching transactions get this merchant title and/or location. The raw bank description is never changed.")
             }
 
             Section {

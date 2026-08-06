@@ -19,6 +19,7 @@ final class DependencyContainer {
     let calculateNetCashFlow: CalculateNetCashFlowUseCase
     let calculateSpendingBreakdown: CalculateSpendingBreakdownUseCase
     let appLockPreferences: any AppLockPreferencesStoring
+    let titleCleanupState: any TitleCleanupStateStoring
     let deviceAuthentication: any DeviceAuthenticationServing
     let onDeviceModelAvailability: any OnDeviceModelAvailabilityChecking
     let descriptionEnricher: any TransactionDescriptionEnriching
@@ -26,6 +27,7 @@ final class DependencyContainer {
     let transactionEnrichment: any TransactionEnrichmentRunning
     let transactionAssistant: any TransactionAssistantServing
     let categorizationRuleDrafting: any CategorizationRuleDrafting
+    let backgroundEnrichment: any BackgroundEnrichmentScheduling
     let useLargeDemoSeed: Bool
 
     /// Launch-safe: SwiftData load/migration failures wipe and fall back; never fails for disk issues.
@@ -55,6 +57,8 @@ final class DependencyContainer {
     }
 
     private init(modelContainer: ModelContainer, largeDemoSeed: Bool) {
+        EnrichmentSanitizer.runIfNeeded(modelContainer: modelContainer)
+        EnrichmentSkipReviver.runIfNeeded(modelContainer: modelContainer)
         self.useLargeDemoSeed = largeDemoSeed
         self.modelContainer = modelContainer
         let transactionRepository = SwiftDataTransactionRepository(modelContainer: modelContainer)
@@ -70,18 +74,30 @@ final class DependencyContainer {
         let tagRepository = SwiftDataTagRepository(modelContainer: modelContainer)
         self.tagRepository = tagRepository
 
-        let availability = AppleIntelligenceAvailabilityChecker()
+        // One coordinator for the whole process: it is the mutex and the pacing/rate-limit
+        // state for every on-device model call, so a second instance would let enrichment
+        // and the assistant run concurrently.
+        let workCoordinator = FoundationModelsWorkCoordinator()
+        let availability = AppleIntelligenceAvailabilityChecker(workCoordinator: workCoordinator)
         self.onDeviceModelAvailability = availability
-        let descriptionEnricher = DescriptionEnricherFactory.make(availability: availability)
+        let descriptionEnricher = DescriptionEnricherFactory.make(
+            availability: availability,
+            workCoordinator: workCoordinator
+        )
         self.descriptionEnricher = descriptionEnricher
-        let categoryEnricher = CategoryEnricherFactory.make(availability: availability)
+        let categoryEnricher = CategoryEnricherFactory.make(
+            availability: availability,
+            workCoordinator: workCoordinator
+        )
         self.categoryEnricher = categoryEnricher
         let enrichment = TransactionEnrichmentCoordinator(
             availability: availability,
             descriptionEnricher: descriptionEnricher,
             categoryEnricher: categoryEnricher,
             transactionRepository: transactionRepository,
-            ruleRepository: categorizationRuleRepository
+            ruleRepository: categorizationRuleRepository,
+            memoStore: MerchantParseMemoStore(modelContainer: modelContainer),
+            workCoordinator: workCoordinator
         )
         self.transactionEnrichment = enrichment
         self.transactionAssistant = TransactionAssistantFactory.make(
@@ -90,10 +106,12 @@ final class DependencyContainer {
             tagRepository: tagRepository,
             accountRepository: accountRepository,
             ruleRepository: categorizationRuleRepository,
-            ruleApplying: categorizationRuleApplying
+            ruleApplying: categorizationRuleApplying,
+            workCoordinator: workCoordinator
         )
         self.categorizationRuleDrafting = CategorizationRuleDraftingFactory.make(
-            availability: availability
+            availability: availability,
+            workCoordinator: workCoordinator
         )
 
         let demo = DemoBankLinkingService(
@@ -124,6 +142,13 @@ final class DependencyContainer {
         self.calculateNetCashFlow = CalculateNetCashFlowUseCase()
         self.calculateSpendingBreakdown = CalculateSpendingBreakdownUseCase()
         self.appLockPreferences = UserDefaultsAppLockPreferencesStore()
+        self.titleCleanupState = UserDefaultsTitleCleanupStateStore()
         self.deviceAuthentication = LocalAuthenticationDeviceAuthenticator()
+        let background = BackgroundEnrichmentScheduler(
+            enrichment: enrichment,
+            sync: sync,
+            workCoordinator: workCoordinator
+        )
+        self.backgroundEnrichment = background
     }
 }

@@ -14,5 +14,7 @@ struct SyncProgressFormattingTests {
 
         #expect(SyncProgressFormatting.title(for: SyncProgress(phase: .preparing)) == "Starting sync…")
         #expect(SyncProgressFormatting.title(for: SyncProgress(phase: .saving)) == "Saving updates…")
+        let backfill = SyncProgress(phase: .backfillingHistory, completedUnits: 1, totalUnits: 4)
+        #expect(SyncProgressFormatting.title(for: backfill) == "Importing history… 1 of 4")
     }
 }

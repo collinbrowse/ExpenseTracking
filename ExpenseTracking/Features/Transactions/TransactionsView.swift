@@ -270,12 +270,34 @@ struct TransactionsView: View {
             Form {
                 Section {
                     HStack {
-                        TextField("Description", text: $viewModel.editingDescription)
+                        TextField("Title", text: $viewModel.editingDescription)
                         Image(systemName: "pencil")
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
                     }
+
+                    Text(viewModel.editingAmountText)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(
+                            viewModel.editingAmountIsIncome ? Theme.positive : Theme.negative
+                        )
+                        .accessibilityIdentifier("transactions.editor.amount")
+                        .accessibilityLabel("Amount \(viewModel.editingAmountText)")
+
+                    if viewModel.editingRawDescription
+                        != viewModel.editingDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                    {
+                        Text(viewModel.editingRawDescription)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.muted)
+                            .accessibilityIdentifier("transactions.editor.rawDescription")
+                            .accessibilityLabel("Bank description \(viewModel.editingRawDescription)")
+                    }
+
+                    TextField("Location", text: $viewModel.editingLocation)
+                        .accessibilityIdentifier("transactions.editor.location")
+
                     Picker("Category", selection: $viewModel.editingCategoryID) {
                         ForEach(SystemCategory.allCategories) { category in
                             Text(category.name).tag(category.id)
@@ -397,18 +419,6 @@ struct TransactionsView: View {
                         .accessibilityLabel("Account \(viewModel.editingAccountName)")
                 } header: {
                     Text("Account")
-                }
-
-                if let location = viewModel.editingLocation, !location.isEmpty {
-                    Section {
-                        Text(location)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                            .accessibilityIdentifier("transactions.editor.location")
-                            .accessibilityLabel("Location \(location)")
-                    } header: {
-                        Text("Location")
-                    }
                 }
             }
             .navigationTitle("Edit Transaction")

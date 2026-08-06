@@ -8,6 +8,8 @@ public struct ResolvedCategory: Equatable, Sendable {
     public let matchedCategoryRule: Bool
     /// Merchant title to apply when a matching rename rule exists.
     public let renameTitle: String?
+    /// Location to apply when a matching location rule exists.
+    public let renameLocation: String?
     /// Tags to add from all matching rules, already excluding the transaction’s suppressed set.
     public let tagIDsToAdd: [TagID]
 
@@ -16,13 +18,19 @@ public struct ResolvedCategory: Equatable, Sendable {
         matchedUserRule: Bool,
         matchedCategoryRule: Bool = false,
         renameTitle: String? = nil,
+        renameLocation: String? = nil,
         tagIDsToAdd: [TagID] = []
     ) {
         self.categoryID = categoryID
         self.matchedUserRule = matchedUserRule
         self.matchedCategoryRule = matchedCategoryRule
         self.renameTitle = renameTitle
+        self.renameLocation = renameLocation
         self.tagIDsToAdd = tagIDsToAdd
+    }
+
+    public var hasRename: Bool {
+        renameTitle != nil || renameLocation != nil
     }
 }
 
@@ -40,7 +48,6 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
         currentCategoryID: CategoryID,
         fallbackCategoryID: CategoryID? = nil
     ) -> ResolvedCategory {
-        // Match against start-of-pass category so categoryIs cannot cascade.
         let matchTransaction = Transaction(
             id: transaction.id,
             accountID: transaction.accountID,
@@ -56,11 +63,12 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
             tagIDs: transaction.tagIDs,
             suppressedTagIDs: transaction.suppressedTagIDs,
             enrichedTitle: transaction.enrichedTitle,
-            enrichedLocation: transaction.enrichedLocation
+            enrichedLocation: transaction.enrichedLocation,
+            titleSource: transaction.titleSource
         )
         let matching = CategorizationRuleMatcher.matchingRules(rules, transaction: matchTransaction)
         let categoryRule = categoryLocked ? nil : matching.first(where: \.appliesCategory)
-        let renameRule = matching.first(where: { $0.renameTitle != nil })
+        let renameRule = matching.first(where: { $0.renameTitle != nil || $0.renameLocation != nil })
         let tagIDsToAdd = tagsToAdd(from: matching, suppressed: transaction.suppressedTagIDs)
 
         if categoryRule != nil || renameRule != nil {
@@ -70,6 +78,7 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
                 matchedUserRule: true,
                 matchedCategoryRule: categoryRule != nil,
                 renameTitle: renameRule?.renameTitle,
+                renameLocation: renameRule?.renameLocation,
                 tagIDsToAdd: tagIDsToAdd
             )
         }
@@ -80,6 +89,7 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
                 matchedUserRule: false,
                 matchedCategoryRule: false,
                 renameTitle: nil,
+                renameLocation: nil,
                 tagIDsToAdd: tagIDsToAdd
             )
         }
@@ -90,13 +100,13 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
                 matchedUserRule: false,
                 matchedCategoryRule: false,
                 renameTitle: nil,
+                renameLocation: nil,
                 tagIDsToAdd: tagIDsToAdd
             )
         }
 
-        let parsedTitle = ParseTransactionDescriptionUseCase.execute(transaction.description).title
         let suggested = SuggestTransactionCategoryUseCase.execute(
-            description: parsedTitle,
+            description: transaction.displayTitle,
             amount: transaction.amount
         )
         return ResolvedCategory(
@@ -104,6 +114,7 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
             matchedUserRule: false,
             matchedCategoryRule: false,
             renameTitle: nil,
+            renameLocation: nil,
             tagIDsToAdd: tagIDsToAdd
         )
     }
@@ -120,7 +131,8 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
         tagIDs: [TagID] = [],
         suppressedTagIDs: [TagID] = [],
         enrichedTitle: String? = nil,
-        enrichedLocation: String? = nil
+        enrichedLocation: String? = nil,
+        titleSource: TitleSource? = nil
     ) -> ResolvedCategory {
         execute(
             transaction: Transaction(
@@ -134,7 +146,8 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
                 tagIDs: tagIDs,
                 suppressedTagIDs: suppressedTagIDs,
                 enrichedTitle: enrichedTitle,
-                enrichedLocation: enrichedLocation
+                enrichedLocation: enrichedLocation,
+                titleSource: titleSource
             ),
             rules: rules,
             categoryLocked: categoryLocked,
@@ -175,15 +188,6 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
         result.formUnion(removed)
         result.subtract(readded)
         return result.sorted { $0.rawValue < $1.rawValue }
-    }
-
-    /// Replaces the merchant title while keeping any parsed location suffix.
-    public static func applyingRename(to description: String, renameTitle: String) -> String {
-        let parsed = ParseTransactionDescriptionUseCase.execute(description)
-        return ParsedTransactionDescription.recombine(
-            title: renameTitle,
-            location: parsed.location
-        )
     }
 
     private static func tagsToAdd(

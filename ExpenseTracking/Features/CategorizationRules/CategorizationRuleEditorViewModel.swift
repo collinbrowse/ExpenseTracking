@@ -215,6 +215,7 @@ final class CategorizationRuleEditorViewModel {
     var categoryID: CategoryID
     var appliesRename: Bool
     var renameTitle = ""
+    var renameLocation = ""
     var selectedTagIDs: Set<TagID> = []
     var isEnabled: Bool
     var conditions: [EditableCondition]
@@ -250,7 +251,10 @@ final class CategorizationRuleEditorViewModel {
             return false
         }
         let hasCategory = appliesCategory
-        let hasRename = appliesRename && !renameTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasRename = appliesRename && (
+            !renameTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !renameLocation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
         let hasTags = !selectedTagIDs.isEmpty
         return hasCategory || hasRename || hasTags
     }
@@ -295,8 +299,9 @@ final class CategorizationRuleEditorViewModel {
             self.existingApplySnapshot = existing.applySnapshot
             self.appliesCategory = existing.appliesCategory
             self.categoryID = existing.categoryID
-            self.appliesRename = existing.renameTitle != nil
+            self.appliesRename = existing.renameTitle != nil || existing.renameLocation != nil
             self.renameTitle = existing.renameTitle ?? ""
+            self.renameLocation = existing.renameLocation ?? ""
             self.selectedTagIDs = Set(existing.tagIDs)
             self.isEnabled = existing.isEnabled
             self.canUndoApply = existing.canUndoApply
@@ -310,6 +315,7 @@ final class CategorizationRuleEditorViewModel {
             self.categoryID = prefillCategoryID ?? SystemCategory.other.id
             self.appliesRename = false
             self.renameTitle = ""
+            self.renameLocation = ""
             self.selectedTagIDs = []
             self.isEnabled = true
             self.canUndoApply = false
@@ -399,10 +405,12 @@ final class CategorizationRuleEditorViewModel {
             appliesRename = false
             categoryID = draft.categoryID
             renameTitle = ""
+            renameLocation = ""
         case .rename:
             appliesCategory = false
             appliesRename = true
             renameTitle = draft.renameTitle ?? ""
+            renameLocation = draft.renameLocation ?? ""
             categoryID = draft.categoryID
         }
         let mapped = draft.conditions.map(EditableCondition.init(condition:))
@@ -492,6 +500,9 @@ final class CategorizationRuleEditorViewModel {
             let rename = appliesRename
                 ? renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 : nil
+            let location = appliesRename
+                ? renameLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+                : nil
             let rule = CategorizationRule(
                 id: existingID ?? CategorizationRuleID(UUID().uuidString),
                 categoryID: categoryID,
@@ -499,6 +510,7 @@ final class CategorizationRuleEditorViewModel {
                 isEnabled: isEnabled,
                 conditions: built,
                 renameTitle: (rename?.isEmpty == false) ? rename : nil,
+                renameLocation: (location?.isEmpty == false) ? location : nil,
                 appliesCategory: appliesCategory,
                 tagIDs: selectedTagIDs.sorted { $0.rawValue < $1.rawValue },
                 createdByAssistant: createdByAssistant,

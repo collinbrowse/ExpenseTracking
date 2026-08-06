@@ -78,7 +78,8 @@ struct IntentHostAssistantTests {
             tagRepository: SwiftDataTagRepository(modelContainer: container),
             accountRepository: SwiftDataAccountRepository(modelContainer: container),
             ruleRepository: SwiftDataCategorizationRuleRepository(modelContainer: container),
-            ruleApplying: CategorizationRuleReapplier(modelContainer: container)
+            ruleApplying: CategorizationRuleReapplier(modelContainer: container),
+            workCoordinator: FoundationModelsWorkCoordinator()
         )
 
         let proposal = try await Self.collectProposal(
@@ -177,7 +178,8 @@ struct IntentHostAssistantTests {
             tagRepository: SwiftDataTagRepository(modelContainer: container),
             accountRepository: SwiftDataAccountRepository(modelContainer: container),
             ruleRepository: SwiftDataCategorizationRuleRepository(modelContainer: container),
-            ruleApplying: CategorizationRuleReapplier(modelContainer: container)
+            ruleApplying: CategorizationRuleReapplier(modelContainer: container),
+            workCoordinator: FoundationModelsWorkCoordinator()
         )
         let proposal = try await Self.collectProposal(
             from: await assistant.interpret(prompt: "Coffee is dining")
@@ -221,7 +223,8 @@ struct IntentHostAssistantTests {
             tagRepository: SwiftDataTagRepository(modelContainer: container),
             accountRepository: SwiftDataAccountRepository(modelContainer: container),
             ruleRepository: SwiftDataCategorizationRuleRepository(modelContainer: container),
-            ruleApplying: CategorizationRuleReapplier(modelContainer: container)
+            ruleApplying: CategorizationRuleReapplier(modelContainer: container),
+            workCoordinator: FoundationModelsWorkCoordinator()
         )
 
         var statuses: [String] = []

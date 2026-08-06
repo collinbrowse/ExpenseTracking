@@ -1,8 +1,8 @@
 import Foundation
 
-/// Domain merge policy: remote wins amount/date; lock / user rules / user edit gate category;
-/// matching rename rules override description; sticky category also keeps a prior local title;
-/// rule tags are additive and honor per-tag suppressions.
+/// Domain merge policy: remote wins amount/date/description; lock / user rules / user edit gate
+/// category; matching rename rules update enrichment (never bank description); rule tags are
+/// additive and honor per-tag suppressions.
 ///
 /// Pending remotes skip user rules (same as re-apply / assistant). Rules apply when the row posts.
 public enum MergeSyncPolicy: Sendable {
@@ -11,7 +11,6 @@ public enum MergeSyncPolicy: Sendable {
         remote: Transaction,
         rules: [CategorizationRule] = []
     ) -> Transaction {
-        // Align with CategorizationRuleReapplier / fetchAllForCategorization: pending is out of scope.
         let effectiveRules = remote.isPending ? [] : rules
 
         guard let local else {
@@ -22,9 +21,12 @@ public enum MergeSyncPolicy: Sendable {
                 currentCategoryID: remote.categoryID,
                 fallbackCategoryID: remote.categoryID
             )
-            let description = renamedDescription(
-                from: remote.description,
-                renameTitle: resolved.renameTitle
+            let (title, location, source) = appliedEnrichment(
+                existingTitle: nil,
+                existingLocation: nil,
+                existingSource: nil,
+                resolved: resolved,
+                fallbackTitle: nil
             )
             return Transaction(
                 id: remote.id,
@@ -32,7 +34,7 @@ public enum MergeSyncPolicy: Sendable {
                 externalID: remote.externalID,
                 amount: remote.amount,
                 postedDate: remote.postedDate,
-                description: description,
+                description: remote.description,
                 categoryID: resolved.categoryID,
                 currencyCode: remote.currencyCode,
                 userEditedCategory: resolved.matchedUserRule,
@@ -44,15 +46,19 @@ public enum MergeSyncPolicy: Sendable {
                     suppressed: []
                 ),
                 suppressedTagIDs: [],
-                enrichedTitle: nil,
-                enrichedLocation: nil
+                enrichedTitle: title,
+                enrichedLocation: location,
+                titleSource: source
             )
         }
+
+        // Bank description is immutable after ingest — always take remote's raw text.
+        // If the bank string changes, clear enrichment so it can be refilled.
+        let descriptionChanged = local.description != remote.description
 
         let categoryID: CategoryID
         let userEdited: Bool
         let locked = local.categoryLocked
-        let description: String
         let matchBase = Transaction(
             id: local.id,
             accountID: remote.accountID,
@@ -67,8 +73,9 @@ public enum MergeSyncPolicy: Sendable {
             categoryLocked: locked,
             tagIDs: local.tagIDs,
             suppressedTagIDs: local.suppressedTagIDs,
-            enrichedTitle: local.enrichedTitle,
-            enrichedLocation: local.enrichedLocation
+            enrichedTitle: descriptionChanged ? nil : local.enrichedTitle,
+            enrichedLocation: descriptionChanged ? nil : local.enrichedLocation,
+            titleSource: descriptionChanged ? nil : local.titleSource
         )
 
         let resolved: ResolvedCategory
@@ -82,15 +89,6 @@ public enum MergeSyncPolicy: Sendable {
             )
             categoryID = local.categoryID
             userEdited = local.userEditedCategory
-            // Lock blocks category only — rename rules still rewrite the title.
-            if let renameTitle = resolved.renameTitle {
-                description = renamedDescription(
-                    from: remote.description,
-                    renameTitle: renameTitle
-                )
-            } else {
-                description = local.description
-            }
         } else {
             resolved = ResolveTransactionCategoryUseCase.execute(
                 transaction: matchBase,
@@ -102,31 +100,26 @@ public enum MergeSyncPolicy: Sendable {
             if resolved.matchedUserRule {
                 categoryID = resolved.categoryID
                 userEdited = true
-                if resolved.renameTitle != nil {
-                    description = renamedDescription(
-                        from: remote.description,
-                        renameTitle: resolved.renameTitle
-                    )
-                } else if local.userEditedCategory {
-                    // Categorize-only match must not wipe a prior rename/manual title.
-                    description = local.description
-                } else {
-                    description = remote.description
-                }
             } else if local.userEditedCategory {
                 categoryID = local.categoryID
                 userEdited = true
-                // Keep rule/manual title across sync when category is sticky.
-                description = local.description
             } else {
                 categoryID = remote.categoryID
                 userEdited = false
-                description = remote.description
             }
         }
 
-        // Keep enrichment only when the stored description is unchanged.
-        let keepEnrichment = description == local.description
+        let existingTitle = descriptionChanged ? nil : local.enrichedTitle
+        let existingLocation = descriptionChanged ? nil : local.enrichedLocation
+        let existingSource = descriptionChanged ? nil : local.titleSource
+        let (title, location, source) = appliedEnrichment(
+            existingTitle: existingTitle,
+            existingLocation: existingLocation,
+            existingSource: existingSource,
+            resolved: resolved,
+            fallbackTitle: existingTitle
+        )
+
         let tagIDs = ResolveTransactionCategoryUseCase.applyingTags(
             current: local.tagIDs,
             ruleTags: resolved.tagIDsToAdd,
@@ -138,7 +131,7 @@ public enum MergeSyncPolicy: Sendable {
             externalID: remote.externalID,
             amount: remote.amount,
             postedDate: resolvedPostedDate(local: local, remote: remote),
-            description: description,
+            description: remote.description,
             categoryID: categoryID,
             currencyCode: remote.currencyCode,
             userEditedCategory: userEdited,
@@ -146,8 +139,9 @@ public enum MergeSyncPolicy: Sendable {
             categoryLocked: locked,
             tagIDs: tagIDs,
             suppressedTagIDs: local.suppressedTagIDs,
-            enrichedTitle: keepEnrichment ? local.enrichedTitle : nil,
-            enrichedLocation: keepEnrichment ? local.enrichedLocation : nil
+            enrichedTitle: title,
+            enrichedLocation: location,
+            titleSource: source
         )
     }
 
@@ -159,11 +153,25 @@ public enum MergeSyncPolicy: Sendable {
         return remote.postedDate
     }
 
-    private static func renamedDescription(from description: String, renameTitle: String?) -> String {
-        guard let renameTitle else { return description }
-        return ResolveTransactionCategoryUseCase.applyingRename(
-            to: description,
-            renameTitle: renameTitle
-        )
+    private static func appliedEnrichment(
+        existingTitle: String?,
+        existingLocation: String?,
+        existingSource: TitleSource?,
+        resolved: ResolvedCategory,
+        fallbackTitle: String?
+    ) -> (String?, String?, TitleSource?) {
+        guard resolved.hasRename else {
+            return (existingTitle, existingLocation, existingSource)
+        }
+        // User-authored enrichment must not be clobbered by a rule during sync.
+        if existingSource == .user {
+            return (existingTitle, existingLocation, existingSource)
+        }
+        let title = resolved.renameTitle ?? existingTitle ?? fallbackTitle
+        let location = resolved.renameLocation ?? existingLocation
+        guard let title, !title.isEmpty else {
+            return (existingTitle, existingLocation, existingSource)
+        }
+        return (title, location, .rule)
     }
 }

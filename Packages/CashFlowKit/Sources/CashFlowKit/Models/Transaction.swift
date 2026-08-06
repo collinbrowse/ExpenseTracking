@@ -22,6 +22,7 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let externalID: String
     public let amount: Decimal
     public let postedDate: Date
+    /// Immutable bank description after ingest. Sync is the only writer.
     public let description: String
     public let categoryID: CategoryID
     public let currencyCode: String
@@ -33,10 +34,12 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let tagIDs: [TagID]
     /// Tags the user removed that rules must not re-add.
     public let suppressedTagIDs: [TagID]
-    /// Local-only LLM/heuristic merchant title cache; sync never invents or clears unless description changes.
+    /// Local-only merchant title; authored by LLM, rule, or user (`titleSource`).
     public let enrichedTitle: String?
-    /// Local-only location cache paired with `enrichedTitle`.
+    /// Local-only location paired with `enrichedTitle`.
     public let enrichedLocation: String?
+    /// Who authored the enrichment fields. Nil when no enrichment is present.
+    public let titleSource: TitleSource?
 
     public init(
         id: TransactionID,
@@ -53,7 +56,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         tagIDs: [TagID] = [],
         suppressedTagIDs: [TagID] = [],
         enrichedTitle: String? = nil,
-        enrichedLocation: String? = nil
+        enrichedLocation: String? = nil,
+        titleSource: TitleSource? = nil
     ) {
         self.id = id
         self.accountID = accountID
@@ -70,12 +74,14 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         self.suppressedTagIDs = suppressedTagIDs
         self.enrichedTitle = enrichedTitle
         self.enrichedLocation = enrichedLocation
+        self.titleSource = titleSource
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, accountID, externalID, amount, postedDate, description
         case categoryID, currencyCode, userEditedCategory, isPending
         case categoryLocked, tagIDs, suppressedTagIDs, enrichedTitle, enrichedLocation
+        case titleSource
     }
 
     public init(from decoder: Decoder) throws {
@@ -95,23 +101,22 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         suppressedTagIDs = try container.decodeIfPresent([TagID].self, forKey: .suppressedTagIDs) ?? []
         enrichedTitle = try container.decodeIfPresent(String.self, forKey: .enrichedTitle)
         enrichedLocation = try container.decodeIfPresent(String.self, forKey: .enrichedLocation)
+        titleSource = try container.decodeIfPresent(TitleSource.self, forKey: .titleSource)
     }
 
-    /// Display title: enrichment cache when present, else heuristic parse.
+    /// Display title: enrichment when present, else raw bank description.
     public var displayTitle: String {
         if let enrichedTitle, !enrichedTitle.isEmpty {
             return enrichedTitle
         }
-        return ParseTransactionDescriptionUseCase.execute(description).title
+        return description.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Display location: enrichment cache when present, else heuristic parse.
+    /// Display location: enrichment when a titled cache exists; never invented from heuristics.
     public var displayLocation: String? {
-        if let enrichedTitle, !enrichedTitle.isEmpty {
-            let trimmed = enrichedLocation?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (trimmed?.isEmpty == false) ? trimmed : nil
-        }
-        return ParseTransactionDescriptionUseCase.execute(description).location
+        guard let enrichedTitle, !enrichedTitle.isEmpty else { return nil }
+        let trimmed = enrichedLocation?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty == false) ? trimmed : nil
     }
 
     public var category: Category {
@@ -133,5 +138,25 @@ public struct CategoryAssignment: Hashable, Sendable {
         self.transactionID = transactionID
         self.categoryID = categoryID
         self.userEditedCategory = userEditedCategory
+    }
+}
+
+/// Local title/location write with provenance. Never mutates the bank description.
+public struct TitleLocationAssignment: Hashable, Sendable {
+    public let transactionID: TransactionID
+    public let title: String?
+    public let location: String?
+    public let titleSource: TitleSource?
+
+    public init(
+        transactionID: TransactionID,
+        title: String?,
+        location: String?,
+        titleSource: TitleSource?
+    ) {
+        self.transactionID = transactionID
+        self.title = title
+        self.location = location
+        self.titleSource = titleSource
     }
 }

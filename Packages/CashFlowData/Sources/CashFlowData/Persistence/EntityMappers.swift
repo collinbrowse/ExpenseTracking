@@ -34,7 +34,8 @@ enum EntityMappers {
             tagIDs: tagIDs,
             suppressedTagIDs: suppressed,
             enrichedTitle: entity.enrichedTitle,
-            enrichedLocation: entity.enrichedLocation
+            enrichedLocation: entity.enrichedLocation,
+            titleSource: titleSource(from: entity.titleSourceRaw)
         )
     }
 
@@ -58,6 +59,7 @@ enum EntityMappers {
             isEnabled: entity.isEnabled,
             conditions: conditions,
             renameTitle: entity.renameTitle,
+            renameLocation: entity.renameLocation,
             appliesCategory: entity.appliesCategory,
             tagIDs: decodeTagIDs(entity.tagIDsData),
             createdByAssistant: entity.createdByAssistant,
@@ -87,5 +89,14 @@ enum EntityMappers {
     static func decodeApplySnapshot(_ data: Data?) -> CategorizationRuleApplySnapshot? {
         guard let data else { return nil }
         return try? JSONDecoder().decode(CategorizationRuleApplySnapshot.self, from: data)
+    }
+
+    static func titleSource(from raw: String?) -> TitleSource? {
+        guard let raw else { return nil }
+        return TitleSource(rawValue: raw)
+    }
+
+    static func titleSourceRaw(from source: TitleSource?) -> String? {
+        source?.rawValue
     }
 }

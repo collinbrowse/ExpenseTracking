@@ -243,9 +243,9 @@ struct CategorizationRulesPersistenceTests {
             try ModelContext(container).fetch(FetchDescriptor<TransactionEntity>()).first
         )
         #expect(tx.categoryID == SystemCategory.shopping.id.rawValue)
-        let parsed = ParseTransactionDescriptionUseCase.execute(tx.transactionDescription)
-        #expect(parsed.title == "Starbucks")
-        #expect(parsed.location == "Denver CO")
+        #expect(tx.enrichedTitle == "Starbucks")
+        #expect(tx.enrichedLocation == nil)
+        #expect(tx.transactionDescription == "STARBUCKS #99  Denver CO")
     }
 
     @Test("Ingest applies user rules before remote suggestion")
@@ -288,7 +288,8 @@ struct CategorizationRulesPersistenceTests {
         #expect(txs.count == 1)
         #expect(txs.first?.categoryID == SystemCategory.businessServices.id.rawValue)
         #expect(txs.first?.userEditedCategory == true)
-        #expect(txs.first?.transactionDescription == "Cursor")
+        #expect(txs.first?.transactionDescription == "Cursor Subscription")
+        #expect(txs.first?.enrichedTitle == "Cursor")
     }
 
     @Test("Reapply renames unlocked matching transactions")
@@ -339,9 +340,9 @@ struct CategorizationRulesPersistenceTests {
         let refreshed = try ModelContext(container).fetch(FetchDescriptor<TransactionEntity>())
         let tx = try #require(refreshed.first)
         #expect(tx.categoryID == SystemCategory.dining.id.rawValue)
-        let parsed = ParseTransactionDescriptionUseCase.execute(tx.transactionDescription)
-        #expect(parsed.title == "Starbucks")
-        #expect(parsed.location == "Denver CO")
+        #expect(tx.enrichedTitle == "Starbucks")
+        #expect(tx.enrichedLocation == nil)
+        #expect(tx.transactionDescription == "STARBUCKS #99  Denver CO")
     }
 
     @Test("Reapply renames with rename-only rule")
@@ -395,9 +396,9 @@ struct CategorizationRulesPersistenceTests {
         #expect(tx.categoryID == SystemCategory.shopping.id.rawValue)
         // Rename-only must not sticky-mark the category as user-edited.
         #expect(tx.userEditedCategory == false)
-        let parsed = ParseTransactionDescriptionUseCase.execute(tx.transactionDescription)
-        #expect(parsed.title == "Starbucks")
-        #expect(parsed.location == "Denver CO")
+        #expect(tx.enrichedTitle == "Starbucks")
+        #expect(tx.enrichedLocation == nil)
+        #expect(tx.transactionDescription == "STARBUCKS #99  Denver CO")
     }
 
     @Test("Reapply applies categorize and rename rules together")
@@ -458,7 +459,8 @@ struct CategorizationRulesPersistenceTests {
             try ModelContext(container).fetch(FetchDescriptor<TransactionEntity>()).first
         )
         #expect(tx.categoryID == SystemCategory.dining.id.rawValue)
-        #expect(ParseTransactionDescriptionUseCase.execute(tx.transactionDescription).title == "Starbucks")
+        #expect(tx.enrichedTitle == "Starbucks")
+        #expect(tx.transactionDescription == "STARBUCKS #99")
     }
 
     @Test("resetAll keeps rules; erase deletes rules")

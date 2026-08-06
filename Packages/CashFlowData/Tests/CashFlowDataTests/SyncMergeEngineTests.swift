@@ -96,7 +96,7 @@ struct SyncMergeEngineTests {
         let tx = try #require(page2.items.first)
         #expect(tx.categoryID == SystemCategory.hidden.id)
         #expect(tx.amount == -25)
-        #expect(tx.description == "Coffee")
+        #expect(tx.description == "Coffee Shop")
         #expect(tx.userEditedCategory == true)
     }
 

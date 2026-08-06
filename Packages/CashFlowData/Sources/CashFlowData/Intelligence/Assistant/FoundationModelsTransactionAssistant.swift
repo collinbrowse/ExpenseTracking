@@ -22,7 +22,7 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
         ruleRepository: any CategorizationRuleRepository,
         ruleApplying: any CategorizationRuleApplying,
         actionStore: AssistantActionStore = AssistantActionStore(),
-        workCoordinator: FoundationModelsWorkCoordinator = .shared
+        workCoordinator: FoundationModelsWorkCoordinator
     ) {
         self.availability = availability
         self.intentInterpreting = intentInterpreting
@@ -200,6 +200,7 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
             appliesCategory: intent.appliesCategory,
             categoryID: intent.categoryID,
             renameTitle: intent.renameTitle,
+            renameLocation: intent.renameLocation,
             tagNames: intent.tagNames,
             matchingTransactionIDs: matching.map(\.id)
         )
@@ -256,18 +257,20 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
         }
 
         // Assistant renames are always one-shot (never persisted as rename rules).
-        if let renameTitle = resolved.renameTitle {
+        if resolved.renameTitle != nil || resolved.renameLocation != nil {
             for tx in matching {
-                let newDescription = ResolveTransactionCategoryUseCase.applyingRename(
-                    to: tx.description,
-                    renameTitle: renameTitle
+                let title = resolved.renameTitle ?? tx.enrichedTitle ?? tx.displayTitle
+                let location = resolved.renameLocation ?? tx.enrichedLocation
+                let clearLocation = resolved.renameLocation.map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                } ?? false
+                try await transactionRepository.updateEnrichment(
+                    transactionID: tx.id,
+                    title: title,
+                    location: location,
+                    source: .user,
+                    clearLocation: clearLocation
                 )
-                if newDescription != tx.description {
-                    try await transactionRepository.updateDescription(
-                        transactionID: tx.id,
-                        description: newDescription
-                    )
-                }
             }
         }
 
@@ -280,7 +283,8 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
             return before.categoryID != after.categoryID
                 || before.userEditedCategory != after.userEditedCategory
                 || Set(before.tagIDs) != Set(after.tagIDs)
-                || before.description != after.description
+                || before.enrichedTitle != after.enrichedTitle
+                || before.enrichedLocation != after.enrichedLocation
         }.count
 
         var lines: [String] = []
@@ -314,6 +318,7 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
         let appliesCategory: Bool
         let categoryID: CategoryID
         let renameTitle: String?
+        let renameLocation: String?
         let tagIDs: [TagID]
 
         init(base: AssistantProposal, tagIDs: [TagID]) {
@@ -323,6 +328,7 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
             appliesCategory = base.appliesCategory
             categoryID = base.categoryID
             renameTitle = base.renameTitle
+            renameLocation = base.renameLocation
             self.tagIDs = tagIDs
         }
     }
@@ -425,6 +431,9 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
         if let rename = intent.renameTitle {
             actions.append("rename to “\(rename)”")
         }
+        if let location = intent.renameLocation {
+            actions.append("set location to “\(location)”")
+        }
         let actionText = actions.isEmpty ? "update" : actions.joined(separator: " and ")
         return "\(actionText.prefix(1).uppercased())\(actionText.dropFirst()) for \(count) transaction\(count == 1 ? "" : "s")"
     }
@@ -469,9 +478,13 @@ public enum TransactionAssistantFactory {
         tagRepository: any TagRepository,
         accountRepository: any AccountRepository,
         ruleRepository: any CategorizationRuleRepository,
-        ruleApplying: any CategorizationRuleApplying
+        ruleApplying: any CategorizationRuleApplying,
+        workCoordinator: FoundationModelsWorkCoordinator
     ) -> any TransactionAssistantServing {
-        let interpreting = TransactionIntentInterpretingFactory.make(availability: availability)
+        let interpreting = TransactionIntentInterpretingFactory.make(
+            availability: availability,
+            workCoordinator: workCoordinator
+        )
         return IntentHostTransactionAssistant(
             availability: availability,
             intentInterpreting: interpreting,
@@ -479,41 +492,46 @@ public enum TransactionAssistantFactory {
             tagRepository: tagRepository,
             accountRepository: accountRepository,
             ruleRepository: ruleRepository,
-            ruleApplying: ruleApplying
+            ruleApplying: ruleApplying,
+            workCoordinator: workCoordinator
         )
     }
 }
 
 public enum DescriptionEnricherFactory {
     public static func make(
-        availability: any OnDeviceModelAvailabilityChecking
+        availability: any OnDeviceModelAvailabilityChecking,
+        workCoordinator: FoundationModelsWorkCoordinator
     ) -> any TransactionDescriptionEnriching {
         var foundation: (any TransactionDescriptionEnriching)?
         if #available(iOS 26, macOS 26, *) {
             #if canImport(FoundationModels)
-            foundation = FoundationModelsDescriptionEnricher()
+            foundation = FoundationModelsDescriptionEnricher(workCoordinator: workCoordinator)
             #endif
         }
         return CompositeTransactionDescriptionEnricher(
             availability: availability,
-            foundation: foundation
+            foundation: foundation,
+            workCoordinator: workCoordinator
         )
     }
 }
 
 public enum CategoryEnricherFactory {
     public static func make(
-        availability: any OnDeviceModelAvailabilityChecking
+        availability: any OnDeviceModelAvailabilityChecking,
+        workCoordinator: FoundationModelsWorkCoordinator
     ) -> any TransactionCategoryEnriching {
         var foundation: (any TransactionCategoryEnriching)?
         if #available(iOS 26, macOS 26, *) {
             #if canImport(FoundationModels)
-            foundation = FoundationModelsCategoryEnricher()
+            foundation = FoundationModelsCategoryEnricher(workCoordinator: workCoordinator)
             #endif
         }
         return CompositeTransactionCategoryEnricher(
             availability: availability,
-            foundation: foundation
+            foundation: foundation,
+            workCoordinator: workCoordinator
         )
     }
 }

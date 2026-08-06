@@ -41,11 +41,14 @@ struct EnrichmentPersistenceTests {
         try await txs.updateEnrichment(
             transactionID: coffee.id,
             title: "Starbucks",
-            location: "Bangkok"
+            location: "Bangkok",
+            source: .llm,
+            clearLocation: false
         )
         let enriched = try await txs.fetchPage(filter: .all, cursor: nil, limit: 10)
         #expect(enriched.items.first?.enrichedTitle == "Starbucks")
         #expect(enriched.items.first?.enrichedLocation == "Bangkok")
+        #expect(enriched.items.first?.titleSource == .llm)
         #expect(enriched.items.first?.displayTitle == "Starbucks")
         #expect(enriched.items.first?.displayLocation == "Bangkok")
 

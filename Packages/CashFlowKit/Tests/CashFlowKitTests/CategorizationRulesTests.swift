@@ -335,7 +335,7 @@ struct MergeSyncPolicyRulesTests {
         #expect(merged.categoryID == SystemCategory.hidden.id)
         #expect(merged.categoryLocked == true)
         #expect(merged.amount == 20)
-        #expect(merged.description == "old")
+        #expect(merged.description == "Coffee Shop")
     }
 
     @Test("Locked still applies rename rule on sync")
@@ -346,6 +346,7 @@ struct MergeSyncPolicyRulesTests {
             priority: 0,
             conditions: [.titleContains("STARBUCKS")],
             renameTitle: "Starbucks",
+            renameLocation: "Denver CO",
             appliesCategory: false
         )
         let categorize = CategorizationRule(
@@ -361,7 +362,7 @@ struct MergeSyncPolicyRulesTests {
             externalID: "ext",
             amount: -5,
             postedDate: Date(timeIntervalSince1970: 100),
-            description: "old title",
+            description: "STARBUCKS #99  Denver CO",
             categoryID: SystemCategory.shopping.id,
             userEditedCategory: true,
             categoryLocked: true
@@ -382,12 +383,13 @@ struct MergeSyncPolicyRulesTests {
         )
         #expect(merged.categoryID == SystemCategory.shopping.id)
         #expect(merged.categoryLocked == true)
-        let parsed = ParseTransactionDescriptionUseCase.execute(merged.description)
-        #expect(parsed.title == "Starbucks")
-        #expect(parsed.location == "Denver CO")
+        #expect(merged.description == "STARBUCKS #99  Denver CO")
+        #expect(merged.enrichedTitle == "Starbucks")
+        #expect(merged.enrichedLocation == "Denver CO")
+        #expect(merged.titleSource == .rule)
     }
 
-    @Test("Categorize-only match keeps prior local rename")
+    @Test("Categorize-only match keeps prior local rename enrichment")
     func categorizeOnlyKeepsPriorRename() {
         let categorize = CategorizationRule(
             id: CategorizationRuleID("cat"),
@@ -402,9 +404,12 @@ struct MergeSyncPolicyRulesTests {
             externalID: "ext",
             amount: -5,
             postedDate: Date(timeIntervalSince1970: 100),
-            description: "Starbucks  Denver CO",
+            description: "STARBUCKS #99  Denver CO",
             categoryID: SystemCategory.shopping.id,
-            userEditedCategory: true
+            userEditedCategory: true,
+            enrichedTitle: "Starbucks",
+            enrichedLocation: "Denver CO",
+            titleSource: .rule
         )
         let remote = Transaction(
             id: TransactionID("t1"),
@@ -417,7 +422,9 @@ struct MergeSyncPolicyRulesTests {
         )
         let merged = MergeSyncPolicy.merge(local: local, remote: remote, rules: [categorize])
         #expect(merged.categoryID == SystemCategory.dining.id)
-        #expect(merged.description == "Starbucks  Denver CO")
+        #expect(merged.description == "STARBUCKS #99  Denver CO")
+        #expect(merged.enrichedTitle == "Starbucks")
+        #expect(merged.enrichedLocation == "Denver CO")
     }
 
     @Test("Matching rule overwrites unlocked user-edited category")
@@ -477,7 +484,7 @@ struct MergeSyncPolicyRulesTests {
         let merged = MergeSyncPolicy.merge(local: local, remote: remote, rules: [])
         #expect(merged.categoryID == SystemCategory.dining.id)
         #expect(merged.userEditedCategory == true)
-        #expect(merged.description == "old")
+        #expect(merged.description == "new")
     }
 
     @Test("New remote applies matching rule")
@@ -563,8 +570,9 @@ struct MergeSyncPolicyRulesTests {
         #expect(!merged.isPending)
         #expect(merged.categoryID == SystemCategory.shopping.id)
         #expect(merged.userEditedCategory == true)
-        let parsed = ParseTransactionDescriptionUseCase.execute(merged.description)
-        #expect(parsed.title == "Amazon")
+        #expect(merged.description == "AMAZON MARKETPLACE")
+        #expect(merged.enrichedTitle == "Amazon")
+        #expect(merged.titleSource == .rule)
     }
 
     @Test("Still-pending update skips matching rule")
@@ -602,14 +610,15 @@ struct MergeSyncPolicyRulesTests {
         #expect(merged.userEditedCategory == false)
     }
 
-    @Test("Matching rename rule rewrites merchant title and keeps location")
+    @Test("Matching rename rule writes enrichment without mutating bank description")
     func renameOnMatch() {
         let rule = CategorizationRule(
             id: CategorizationRuleID("r1"),
             categoryID: SystemCategory.dining.id,
             priority: 0,
             conditions: [.titleContains("Starbucks")],
-            renameTitle: "Starbucks"
+            renameTitle: "Starbucks",
+            renameLocation: "Seattle WA"
         )
         let remote = Transaction(
             id: TransactionID("t1"),
@@ -622,12 +631,13 @@ struct MergeSyncPolicyRulesTests {
         )
         let merged = MergeSyncPolicy.merge(local: nil, remote: remote, rules: [rule])
         #expect(merged.categoryID == SystemCategory.dining.id)
-        let parsed = ParseTransactionDescriptionUseCase.execute(merged.description)
-        #expect(parsed.title == "Starbucks")
-        #expect(parsed.location == "Seattle WA")
+        #expect(merged.description == "STARBUCKS STORE 12345  Seattle WA")
+        #expect(merged.enrichedTitle == "Starbucks")
+        #expect(merged.enrichedLocation == "Seattle WA")
+        #expect(merged.titleSource == .rule)
     }
 
-    @Test("Sticky user-edited category keeps local rename when rules are missing on sync")
+    @Test("Sticky user-edited category keeps enrichment when bank description is unchanged")
     func stickyCategoryKeepsLocalDescription() {
         let local = Transaction(
             id: TransactionID("t1"),
@@ -635,9 +645,11 @@ struct MergeSyncPolicyRulesTests {
             externalID: "ext",
             amount: -5,
             postedDate: Date(timeIntervalSince1970: 100),
-            description: "Starbucks",
+            description: "STARBUCKS STORE 12345  Seattle WA",
             categoryID: SystemCategory.dining.id,
-            userEditedCategory: true
+            userEditedCategory: true,
+            enrichedTitle: "Starbucks",
+            titleSource: .user
         )
         let remote = Transaction(
             id: TransactionID("t1"),
@@ -650,7 +662,9 @@ struct MergeSyncPolicyRulesTests {
         )
         let merged = MergeSyncPolicy.merge(local: local, remote: remote, rules: [])
         #expect(merged.categoryID == SystemCategory.dining.id)
-        #expect(merged.description == "Starbucks")
+        #expect(merged.description == "STARBUCKS STORE 12345  Seattle WA")
+        #expect(merged.enrichedTitle == "Starbucks")
+        #expect(merged.titleSource == .user)
         #expect(merged.userEditedCategory == true)
     }
 
@@ -720,9 +734,12 @@ struct MergeSyncPolicyRulesTests {
         #expect(
             CategorizationRuleMatcher.matches(
                 rule,
-                description: "Starbucks  Seattle WA",
+                description: "STARBUCKS STORE 12345  Seattle WA",
                 amount: -5,
-                accountID: account
+                accountID: account,
+                enrichedTitle: "Starbucks",
+                enrichedLocation: "Seattle WA",
+                titleSource: .rule
             )
         )
     }

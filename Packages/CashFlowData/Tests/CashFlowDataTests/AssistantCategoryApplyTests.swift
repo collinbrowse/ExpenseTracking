@@ -56,7 +56,8 @@ struct AssistantCategoryApplyTests {
             tagRepository: SwiftDataTagRepository(modelContainer: container),
             accountRepository: SwiftDataAccountRepository(modelContainer: container),
             ruleRepository: SwiftDataCategorizationRuleRepository(modelContainer: container),
-            ruleApplying: CategorizationRuleReapplier(modelContainer: container)
+            ruleApplying: CategorizationRuleReapplier(modelContainer: container),
+            workCoordinator: FoundationModelsWorkCoordinator()
         )
 
         var proposal: AssistantProposal?

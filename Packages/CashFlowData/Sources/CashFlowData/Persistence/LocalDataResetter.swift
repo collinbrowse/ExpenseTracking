@@ -39,6 +39,10 @@ public actor LocalDataResetter {
                 tag.transactions = []
                 context.delete(tag)
             }
+            let memos = try context.fetch(FetchDescriptor<MerchantParseMemoEntity>())
+            for memo in memos {
+                context.delete(memo)
+            }
             try context.save()
             try? snapshotStore.clear()
         } catch let error as CashFlowError {
@@ -115,6 +119,9 @@ public actor LocalDataResetter {
                 existing.needsReauth = false
                 existing.lastSuccessfulSyncAt = nil
                 existing.historyBackfillComplete = false
+                existing.historyComplete = false
+                existing.earliestFetchedDate = nil
+                existing.lastBackfillAdvanceAt = nil
             } else {
                 context.insert(
                     ConnectionEntity(
@@ -122,6 +129,7 @@ public actor LocalDataResetter {
                         needsReauth: false,
                         lastSuccessfulSyncAt: nil,
                         isDemo: isDemo,
+                        historyComplete: false,
                         historyBackfillComplete: false
                     )
                 )

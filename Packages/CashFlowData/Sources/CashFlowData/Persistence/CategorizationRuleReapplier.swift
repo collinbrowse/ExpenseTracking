@@ -29,6 +29,7 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             categoryID: rule.categoryID,
             tagIDs: rule.tagIDs,
             renameTitle: rule.renameTitle,
+            renameLocation: rule.renameLocation,
             priors: priors
         )
         let withSnapshot = copy(rule, snapshot: provisional.canUndo ? provisional : nil)
@@ -47,13 +48,16 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             return after.categoryID != prior.categoryID
                 || after.userEditedCategory != prior.userEditedCategory
                 || Set(after.tagIDs) != Set(prior.tagIDs)
-                || after.description != prior.description
+                || after.enrichedTitle != prior.enrichedTitle
+                || after.enrichedLocation != prior.enrichedLocation
+                || after.titleSource != prior.titleSource
         }
         let finalSnapshot = CategorizationRuleApplySnapshot(
             appliesCategory: rule.appliesCategory,
             categoryID: rule.categoryID,
             tagIDs: rule.tagIDs,
             renameTitle: rule.renameTitle,
+            renameLocation: rule.renameLocation,
             priors: changedPriors
         )
         let finalRule = copy(rule, snapshot: finalSnapshot.canUndo ? finalSnapshot : nil)
@@ -84,7 +88,6 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
         let tagsByID = Dictionary(
             uniqueKeysWithValues: try context.fetch(FetchDescriptor<TagEntity>()).map { ($0.id, $0) }
         )
-        var restored = 0
         var touched = Set<TransactionID>()
 
         for assignment in restorations.categoryAssignments {
@@ -109,26 +112,23 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             }
             touched.insert(assignment.transactionID)
         }
-        for assignment in restorations.descriptionAssignments {
+        for assignment in restorations.titleLocationAssignments {
             let tid = assignment.transactionID.rawValue
             let pred = #Predicate<TransactionEntity> { $0.id == tid }
             var desc = FetchDescriptor<TransactionEntity>(predicate: pred)
             desc.fetchLimit = 1
             guard let tx = try context.fetch(desc).first else { continue }
-            if tx.transactionDescription != assignment.description {
-                tx.transactionDescription = assignment.description
-                tx.enrichedTitle = nil
-                tx.enrichedLocation = nil
-            }
+            tx.enrichedTitle = assignment.title
+            tx.enrichedLocation = assignment.location
+            tx.titleSourceRaw = EntityMappers.titleSourceRaw(from: assignment.titleSource)
             touched.insert(assignment.transactionID)
         }
-        restored = touched.count
+        let restored = touched.count
 
         entity.isEnabled = false
         entity.applySnapshotData = nil
         try context.save()
 
-        // Let remaining enabled rules re-assert where appropriate.
         _ = try reapplyAllRules(context: context)
         return restored
     }
@@ -166,15 +166,6 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
                 currentCategoryID: current.categoryID,
                 fallbackCategoryID: current.categoryID
             )
-            let newDescription: String
-            if let renameTitle = resolved.renameTitle {
-                newDescription = ResolveTransactionCategoryUseCase.applyingRename(
-                    to: current.description,
-                    renameTitle: renameTitle
-                )
-            } else {
-                newDescription = current.description
-            }
 
             let newTagIDs = ResolveTransactionCategoryUseCase.applyingTags(
                 current: current.tagIDs,
@@ -192,14 +183,27 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
                     didChange = true
                 }
             }
-            if entity.transactionDescription != newDescription {
-                entity.transactionDescription = newDescription
-                if newDescription != current.description {
-                    entity.enrichedTitle = nil
-                    entity.enrichedLocation = nil
+
+            if resolved.hasRename,
+               TitleSource.canOverwrite(existing: current.titleSource, with: .rule)
+            {
+                let newTitle = resolved.renameTitle ?? current.enrichedTitle ?? current.displayTitle
+                let newLocation = resolved.renameLocation ?? current.enrichedLocation
+                if entity.enrichedTitle != newTitle
+                    || entity.enrichedLocation != newLocation
+                    || entity.titleSourceRaw != TitleSource.rule.rawValue
+                {
+                    entity.enrichedTitle = newTitle
+                    if resolved.renameLocation != nil {
+                        entity.enrichedLocation = resolved.renameLocation
+                    } else if entity.enrichedLocation == nil {
+                        entity.enrichedLocation = newLocation
+                    }
+                    entity.titleSourceRaw = TitleSource.rule.rawValue
+                    didChange = true
                 }
-                didChange = true
             }
+
             if Set(newTagIDs.map(\.rawValue)) != Set(current.tagIDs.map(\.rawValue)) {
                 entity.tags = newTagIDs.compactMap { tagsByID[$0.rawValue] }
                 didChange = true
@@ -227,6 +231,7 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             existing.isEnabled = rule.isEnabled
             existing.conditionsData = data
             existing.renameTitle = rule.renameTitle
+            existing.renameLocation = rule.renameLocation
             existing.appliesCategory = rule.appliesCategory
             existing.tagIDsData = tagData
             existing.createdByAssistant = existing.createdByAssistant || rule.createdByAssistant
@@ -240,6 +245,7 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
                     isEnabled: rule.isEnabled,
                     conditionsData: data,
                     renameTitle: rule.renameTitle,
+                    renameLocation: rule.renameLocation,
                     appliesCategory: rule.appliesCategory,
                     tagIDsData: tagData,
                     createdByAssistant: rule.createdByAssistant,
@@ -260,6 +266,7 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             isEnabled: rule.isEnabled,
             conditions: rule.conditions,
             renameTitle: rule.renameTitle,
+            renameLocation: rule.renameLocation,
             appliesCategory: rule.appliesCategory,
             tagIDs: rule.tagIDs,
             createdByAssistant: rule.createdByAssistant,
@@ -287,6 +294,7 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             isEnabled: rule.isEnabled && !conditions.isEmpty,
             conditions: conditions,
             renameTitle: rule.renameTitle,
+            renameLocation: rule.renameLocation,
             appliesCategory: rule.appliesCategory,
             tagIDs: tagIDs,
             createdByAssistant: rule.createdByAssistant,

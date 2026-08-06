@@ -4,10 +4,12 @@ import CashFlowKit
 struct TransactionRowModel: Identifiable, Hashable, Sendable {
     let id: TransactionID
     let accountID: AccountID
-    /// Merchant / payee without trailing bank location padding.
+    /// Merchant / payee from enrichment, else raw bank description.
     let title: String
-    /// City / region when SimpleFIN pads it after the merchant name.
+    /// Location from enrichment when present.
     let location: String?
+    /// Immutable bank description for search and the editor's muted raw line.
+    let rawDescription: String
     let categoryText: String
     let categoryID: CategoryID
     let categoryLocked: Bool
@@ -40,6 +42,7 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
         self.accountID = transaction.accountID
         self.title = transaction.displayTitle
         self.location = transaction.displayLocation
+        self.rawDescription = transaction.description
         self.categoryText = transaction.category.name
         self.categoryID = transaction.categoryID
         self.categoryLocked = transaction.categoryLocked
@@ -85,9 +88,10 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
         }
     }
 
-    /// Rebuilds display fields after a local edit without refetching the list.
+    /// Rebuilds display fields after a local enrichment edit without refetching the list.
     func replacing(
-        description: String,
+        title: String,
+        location: String?,
         categoryID: CategoryID,
         categoryLocked: Bool,
         tagIDs: [TagID]? = nil,
@@ -100,14 +104,15 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
             externalID: "",
             amount: amount,
             postedDate: postedDate,
-            description: description,
+            description: rawDescription,
             categoryID: categoryID,
             userEditedCategory: true,
             isPending: isPending,
             categoryLocked: categoryLocked,
             tagIDs: resolvedTags,
-            enrichedTitle: nil,
-            enrichedLocation: nil
+            enrichedTitle: title,
+            enrichedLocation: location,
+            titleSource: .user
         )
         return TransactionRowModel(
             transaction: transaction,

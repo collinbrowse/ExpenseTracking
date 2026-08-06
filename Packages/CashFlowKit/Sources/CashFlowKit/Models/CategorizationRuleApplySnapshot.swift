@@ -6,20 +6,54 @@ public struct CategorizationRuleTransactionPrior: Hashable, Sendable, Codable {
     public let categoryID: CategoryID
     public let userEditedCategory: Bool
     public let tagIDs: [TagID]
-    public let description: String
+    public let enrichedTitle: String?
+    public let enrichedLocation: String?
+    public let titleSource: TitleSource?
 
     public init(
         transactionID: TransactionID,
         categoryID: CategoryID,
         userEditedCategory: Bool,
         tagIDs: [TagID],
-        description: String
+        enrichedTitle: String?,
+        enrichedLocation: String?,
+        titleSource: TitleSource?
     ) {
         self.transactionID = transactionID
         self.categoryID = categoryID
         self.userEditedCategory = userEditedCategory
         self.tagIDs = tagIDs
-        self.description = description
+        self.enrichedTitle = enrichedTitle
+        self.enrichedLocation = enrichedLocation
+        self.titleSource = titleSource
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case transactionID, categoryID, userEditedCategory, tagIDs
+        case enrichedTitle, enrichedLocation, titleSource
+        case description // legacy — ignored on decode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        transactionID = try container.decode(TransactionID.self, forKey: .transactionID)
+        categoryID = try container.decode(CategoryID.self, forKey: .categoryID)
+        userEditedCategory = try container.decode(Bool.self, forKey: .userEditedCategory)
+        tagIDs = try container.decode([TagID].self, forKey: .tagIDs)
+        enrichedTitle = try container.decodeIfPresent(String.self, forKey: .enrichedTitle)
+        enrichedLocation = try container.decodeIfPresent(String.self, forKey: .enrichedLocation)
+        titleSource = try container.decodeIfPresent(TitleSource.self, forKey: .titleSource)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(transactionID, forKey: .transactionID)
+        try container.encode(categoryID, forKey: .categoryID)
+        try container.encode(userEditedCategory, forKey: .userEditedCategory)
+        try container.encode(tagIDs, forKey: .tagIDs)
+        try container.encodeIfPresent(enrichedTitle, forKey: .enrichedTitle)
+        try container.encodeIfPresent(enrichedLocation, forKey: .enrichedLocation)
+        try container.encodeIfPresent(titleSource, forKey: .titleSource)
     }
 }
 
@@ -30,6 +64,7 @@ public struct CategorizationRuleApplySnapshot: Hashable, Sendable, Codable {
     public let categoryID: CategoryID
     public let tagIDs: [TagID]
     public let renameTitle: String?
+    public let renameLocation: String?
     public let priors: [CategorizationRuleTransactionPrior]
 
     public init(
@@ -38,6 +73,7 @@ public struct CategorizationRuleApplySnapshot: Hashable, Sendable, Codable {
         categoryID: CategoryID,
         tagIDs: [TagID],
         renameTitle: String?,
+        renameLocation: String? = nil,
         priors: [CategorizationRuleTransactionPrior]
     ) {
         self.capturedAt = capturedAt
@@ -45,30 +81,49 @@ public struct CategorizationRuleApplySnapshot: Hashable, Sendable, Codable {
         self.categoryID = categoryID
         self.tagIDs = tagIDs
         self.renameTitle = renameTitle
+        self.renameLocation = renameLocation
         self.priors = priors
     }
 
     public var canUndo: Bool { !priors.isEmpty }
+
+    private enum CodingKeys: String, CodingKey {
+        case capturedAt, appliesCategory, categoryID, tagIDs
+        case renameTitle, renameLocation, priors
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        capturedAt = try container.decode(Date.self, forKey: .capturedAt)
+        appliesCategory = try container.decode(Bool.self, forKey: .appliesCategory)
+        categoryID = try container.decode(CategoryID.self, forKey: .categoryID)
+        tagIDs = try container.decode([TagID].self, forKey: .tagIDs)
+        renameTitle = try container.decodeIfPresent(String.self, forKey: .renameTitle)
+        renameLocation = try container.decodeIfPresent(String.self, forKey: .renameLocation)
+        priors = try container.decode([CategorizationRuleTransactionPrior].self, forKey: .priors)
+    }
 }
 
 /// Restorations produced by undoing a rule (manual edits already filtered out).
 public struct CategorizationRuleUndoRestorations: Equatable, Sendable {
     public var categoryAssignments: [CategoryAssignment]
     public var tagAssignments: [TagAssignment]
-    public var descriptionAssignments: [DescriptionAssignment]
+    public var titleLocationAssignments: [TitleLocationAssignment]
 
     public init(
         categoryAssignments: [CategoryAssignment] = [],
         tagAssignments: [TagAssignment] = [],
-        descriptionAssignments: [DescriptionAssignment] = []
+        titleLocationAssignments: [TitleLocationAssignment] = []
     ) {
         self.categoryAssignments = categoryAssignments
         self.tagAssignments = tagAssignments
-        self.descriptionAssignments = descriptionAssignments
+        self.titleLocationAssignments = titleLocationAssignments
     }
 
     public var isEmpty: Bool {
-        categoryAssignments.isEmpty && tagAssignments.isEmpty && descriptionAssignments.isEmpty
+        categoryAssignments.isEmpty
+            && tagAssignments.isEmpty
+            && titleLocationAssignments.isEmpty
     }
 }
 
@@ -80,7 +135,7 @@ public enum UndoCategorizationRuleUseCase: Sendable {
     ) -> CategorizationRuleUndoRestorations {
         var categories: [CategoryAssignment] = []
         var tags: [TagAssignment] = []
-        var descriptions: [DescriptionAssignment] = []
+        var titles: [TitleLocationAssignment] = []
 
         let ruleTags = Set(snapshot.tagIDs)
 
@@ -88,7 +143,6 @@ public enum UndoCategorizationRuleUseCase: Sendable {
             guard let current = currentByID[prior.transactionID] else { continue }
 
             if snapshot.appliesCategory {
-                // Restore only while the rule’s category is still present.
                 if current.categoryID == snapshot.categoryID {
                     categories.append(
                         CategoryAssignment(
@@ -115,29 +169,33 @@ public enum UndoCategorizationRuleUseCase: Sendable {
                 }
             }
 
-            if let renameTitle = snapshot.renameTitle {
-                let renamed = ResolveTransactionCategoryUseCase.applyingRename(
-                    to: prior.description,
-                    renameTitle: renameTitle
-                )
-                // Restore only if the user hasn’t manually changed the title since.
-                if current.description == renamed
-                    || TransactionDescriptionMatcher.equals(current.displayTitle, other: renameTitle)
-                {
-                    descriptions.append(
-                        DescriptionAssignment(
-                            transactionID: prior.transactionID,
-                            description: prior.description
-                        )
+            let titleChangedByRule = snapshot.renameTitle.map {
+                TransactionDescriptionMatcher.equals(current.displayTitle, other: $0)
+            } ?? false
+            let locationChangedByRule = snapshot.renameLocation.map { rename in
+                guard let currentLocation = current.displayLocation else { return false }
+                return TransactionDescriptionMatcher.equals(currentLocation, other: rename)
+            } ?? false
+
+            if (snapshot.renameTitle != nil || snapshot.renameLocation != nil),
+               (titleChangedByRule || locationChangedByRule),
+               current.titleSource != .user
+            {
+                titles.append(
+                    TitleLocationAssignment(
+                        transactionID: prior.transactionID,
+                        title: prior.enrichedTitle,
+                        location: prior.enrichedLocation,
+                        titleSource: prior.titleSource
                     )
-                }
+                )
             }
         }
 
         return CategorizationRuleUndoRestorations(
             categoryAssignments: categories,
             tagAssignments: tags,
-            descriptionAssignments: descriptions
+            titleLocationAssignments: titles
         )
     }
 
@@ -153,12 +211,16 @@ public enum UndoCategorizationRuleUseCase: Sendable {
             }
             let ruleAdded = Set(rule.tagIDs).subtracting(tx.tagIDs).subtracting(tx.suppressedTagIDs)
             if !ruleAdded.isEmpty { wouldChange = true }
-            if let rename = rule.renameTitle {
-                let renamed = ResolveTransactionCategoryUseCase.applyingRename(
-                    to: tx.description,
-                    renameTitle: rename
-                )
-                if renamed != tx.description { wouldChange = true }
+            if let rename = rule.renameTitle,
+               !TransactionDescriptionMatcher.equals(tx.displayTitle, other: rename)
+            {
+                wouldChange = true
+            }
+            if let renameLocation = rule.renameLocation {
+                let current = tx.displayLocation ?? ""
+                if !TransactionDescriptionMatcher.equals(current, other: renameLocation) {
+                    wouldChange = true
+                }
             }
             guard wouldChange else { return nil }
             return CategorizationRuleTransactionPrior(
@@ -166,7 +228,9 @@ public enum UndoCategorizationRuleUseCase: Sendable {
                 categoryID: tx.categoryID,
                 userEditedCategory: tx.userEditedCategory,
                 tagIDs: tx.tagIDs,
-                description: tx.description
+                enrichedTitle: tx.enrichedTitle,
+                enrichedLocation: tx.enrichedLocation,
+                titleSource: tx.titleSource
             )
         }
     }

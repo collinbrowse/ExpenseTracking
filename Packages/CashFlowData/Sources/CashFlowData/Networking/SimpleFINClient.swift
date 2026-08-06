@@ -64,37 +64,112 @@ public struct SimpleFINClient: Sendable {
         return dto.versions
     }
 
+    /// Result of a windowed `/accounts` fetch, including empty-window trailing count for backfill stop.
+    public struct WindowedFetchResult: Sendable {
+        public let payload: RemoteSyncPayload
+        public let windowsCompleted: Int
+        public let consecutiveEmptyTrailing: Int
+        public let fetchedStart: Date
+        public let fetchedEnd: Date
+
+        public init(
+            payload: RemoteSyncPayload,
+            windowsCompleted: Int,
+            consecutiveEmptyTrailing: Int,
+            fetchedStart: Date,
+            fetchedEnd: Date
+        ) {
+            self.payload = payload
+            self.windowsCompleted = windowsCompleted
+            self.consecutiveEmptyTrailing = consecutiveEmptyTrailing
+            self.fetchedStart = fetchedStart
+            self.fetchedEnd = fetchedEnd
+        }
+    }
+
     public func fetchAccounts(
         accessURL: String,
         startDate: Date?,
         endDate: Date?,
         onWindowProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)? = nil
     ) async throws -> RemoteSyncPayload {
+        try await fetchAccountsWindowed(
+            accessURL: accessURL,
+            startDate: startDate,
+            endDate: endDate,
+            maxWindows: nil,
+            stopAfterConsecutiveEmpty: nil,
+            onWindowProgress: onWindowProgress
+        ).payload
+    }
+
+    public func fetchAccountsWindowed(
+        accessURL: String,
+        startDate: Date?,
+        endDate: Date?,
+        maxWindows: Int?,
+        stopAfterConsecutiveEmpty: Int?,
+        onWindowProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)? = nil
+    ) async throws -> WindowedFetchResult {
         let resolvedEnd = endDate ?? .now
         let resolvedStart = startDate
             ?? Calendar.current.date(byAdding: .day, value: -Self.maxAccountsRangeDays, to: resolvedEnd)
             ?? resolvedEnd
 
-        let windows = Self.dateWindows(
+        var windows = Self.dateWindows(
             from: resolvedStart,
             to: resolvedEnd,
             maxDays: Self.maxAccountsRangeDays,
             overlapDays: Self.windowOverlapDays
         )
+        // Walk newest → oldest so consecutive-empty stop detects bank retention cliff.
+        windows.reverse()
+        if let maxWindows, maxWindows > 0, windows.count > maxWindows {
+            windows = Array(windows.prefix(maxWindows))
+        }
 
         onWindowProgress?(0, windows.count)
         var payloads: [RemoteSyncPayload] = []
         payloads.reserveCapacity(windows.count)
-        for (index, window) in windows.enumerated() {
+        var consecutiveEmpty = 0
+        var completed = 0
+        for window in windows {
             let payload = try await fetchAccountsWindow(
                 accessURL: accessURL,
                 startDate: window.lowerBound,
                 endDate: window.upperBound
             )
             payloads.append(payload)
-            onWindowProgress?(index + 1, windows.count)
+            completed += 1
+            onWindowProgress?(completed, windows.count)
+            let txCount = payload.accounts.reduce(0) { $0 + $1.transactions.count }
+            if txCount == 0 {
+                consecutiveEmpty += 1
+                if let stopAfterConsecutiveEmpty,
+                   stopAfterConsecutiveEmpty > 0,
+                   consecutiveEmpty >= stopAfterConsecutiveEmpty
+                {
+                    break
+                }
+            } else {
+                consecutiveEmpty = 0
+            }
         }
-        return Self.mergePayloads(payloads)
+
+        let fetchedStart = payloads.isEmpty
+            ? resolvedStart
+            : (windows.prefix(completed).map(\.lowerBound).min() ?? resolvedStart)
+        let fetchedEnd = payloads.isEmpty
+            ? resolvedEnd
+            : (windows.prefix(completed).map(\.upperBound).max() ?? resolvedEnd)
+
+        return WindowedFetchResult(
+            payload: Self.mergePayloads(payloads),
+            windowsCompleted: completed,
+            consecutiveEmptyTrailing: consecutiveEmpty,
+            fetchedStart: fetchedStart,
+            fetchedEnd: fetchedEnd
+        )
     }
 
     private func fetchAccountsWindow(

@@ -4,14 +4,24 @@ public enum CategorizationRuleMatcher: Sendable {
     /// Evaluates a rule against a transaction’s current (start-of-pass) state.
     public static func matches(_ rule: CategorizationRule, transaction: Transaction) -> Bool {
         guard rule.isEnabled, !rule.conditions.isEmpty else { return false }
-        // After a rename rule runs, the visible title becomes `renameTitle`. Treat text
-        // conditions as satisfied so re-apply / relaunch still keep the rule.
+        // After a rename rule runs, the visible title/location become the rename values.
+        // Treat text conditions as satisfied so re-apply / relaunch still keep the rule.
         let alreadyRenamed = rule.renameTitle.map {
             TransactionDescriptionMatcher.equals(transaction.displayTitle, other: $0)
         } ?? false
+        let alreadyRelocated = rule.renameLocation.map { rename in
+            guard let location = transaction.displayLocation else { return false }
+            return TransactionDescriptionMatcher.equals(location, other: rename)
+        } ?? false
 
         return rule.conditions.allSatisfy { condition in
-            if alreadyRenamed, isStickyTextCondition(condition) {
+            if alreadyRenamed, isStickyTitleCondition(condition) {
+                return true
+            }
+            if alreadyRelocated, isStickyLocationCondition(condition) {
+                return true
+            }
+            if (alreadyRenamed || alreadyRelocated), isStickyDescriptionCondition(condition) {
                 return true
             }
             return matches(condition, transaction: transaction)
@@ -27,22 +37,36 @@ public enum CategorizationRuleMatcher: Sendable {
         let accountID = transaction.accountID
         switch condition {
         case .titleContains(let needle):
-            // Match what the user sees: enrichment title when present, else heuristic parse.
-            // Include location so bank padding mid-string still counts as title words.
-            let titleHaystack = ParsedTransactionDescription.recombine(
-                title: transaction.displayTitle,
-                location: transaction.displayLocation
-            )
-            return TransactionDescriptionMatcher.contains(titleHaystack, needle: needle)
+            // Union of raw bank text and titled enrichment so rules stay stable across enrichment.
+            if TransactionDescriptionMatcher.contains(description, needle: needle) {
+                return true
+            }
+            if let enriched = transaction.enrichedTitle,
+               TransactionDescriptionMatcher.contains(enriched, needle: needle)
+            {
+                return true
+            }
+            if let location = transaction.enrichedLocation,
+               TransactionDescriptionMatcher.contains(location, needle: needle)
+            {
+                return true
+            }
+            return false
         case .titleEquals(let value):
-            return TransactionDescriptionMatcher.equals(transaction.displayTitle, other: value)
+            if TransactionDescriptionMatcher.equals(transaction.displayTitle, other: value) {
+                return true
+            }
+            return TransactionDescriptionMatcher.equals(description, other: value)
         case .descriptionContains(let needle):
             return TransactionDescriptionMatcher.contains(description, needle: needle)
         case .descriptionEquals(let value):
             return TransactionDescriptionMatcher.equals(description, other: value)
         case .locationContains(let needle):
-            guard let location = transaction.displayLocation else { return false }
-            return TransactionDescriptionMatcher.contains(location, needle: needle)
+            if let location = transaction.displayLocation {
+                return TransactionDescriptionMatcher.contains(location, needle: needle)
+            }
+            // Pre-enrichment: fall back to the raw bank string.
+            return TransactionDescriptionMatcher.contains(description, needle: needle)
         case .categoryIs(let expected):
             return transaction.categoryID == expected
         case .hasTag(let tagID):
@@ -85,7 +109,8 @@ public enum CategorizationRuleMatcher: Sendable {
         categoryID: CategoryID = SystemCategory.other.id,
         tagIDs: [TagID] = [],
         enrichedTitle: String? = nil,
-        enrichedLocation: String? = nil
+        enrichedLocation: String? = nil,
+        titleSource: TitleSource? = nil
     ) -> Bool {
         matches(
             rule,
@@ -99,7 +124,8 @@ public enum CategorizationRuleMatcher: Sendable {
                 categoryID: categoryID,
                 tagIDs: tagIDs,
                 enrichedTitle: enrichedTitle,
-                enrichedLocation: enrichedLocation
+                enrichedLocation: enrichedLocation,
+                titleSource: titleSource
             )
         )
     }
@@ -137,11 +163,29 @@ public enum CategorizationRuleMatcher: Sendable {
         matchingRules(rules, description: description, amount: amount, accountID: accountID).first
     }
 
-    private static func isStickyTextCondition(_ condition: CategorizationCondition) -> Bool {
+    private static func isStickyTitleCondition(_ condition: CategorizationCondition) -> Bool {
         switch condition {
-        case .titleContains, .titleEquals, .descriptionContains, .descriptionEquals:
+        case .titleContains, .titleEquals:
             return true
-        case .locationContains, .categoryIs, .hasTag, .accountID, .amountMin, .amountMax:
+        default:
+            return false
+        }
+    }
+
+    private static func isStickyLocationCondition(_ condition: CategorizationCondition) -> Bool {
+        switch condition {
+        case .locationContains:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func isStickyDescriptionCondition(_ condition: CategorizationCondition) -> Bool {
+        switch condition {
+        case .descriptionContains, .descriptionEquals:
+            return true
+        default:
             return false
         }
     }
