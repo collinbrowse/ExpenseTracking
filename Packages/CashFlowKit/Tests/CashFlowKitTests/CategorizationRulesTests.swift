@@ -502,6 +502,106 @@ struct MergeSyncPolicyRulesTests {
         #expect(merged.userEditedCategory == true)
     }
 
+    @Test("Pending remote skips matching rule until posted")
+    func pendingRemoteSkipsRule() {
+        let rule = CategorizationRule(
+            id: CategorizationRuleID("r1"),
+            categoryID: SystemCategory.shopping.id,
+            priority: 0,
+            conditions: [.titleContains("Amazon")],
+            renameTitle: "Amazon",
+            tagIDs: [TagID("trip")]
+        )
+        let remote = Transaction(
+            id: TransactionID("t1"),
+            accountID: account,
+            externalID: "ext",
+            amount: -40,
+            postedDate: Date(timeIntervalSince1970: 200),
+            description: "AMAZON MARKETPLACE",
+            categoryID: SystemCategory.other.id,
+            isPending: true
+        )
+        let merged = MergeSyncPolicy.merge(local: nil, remote: remote, rules: [rule])
+        #expect(merged.isPending)
+        #expect(merged.categoryID == SystemCategory.other.id)
+        #expect(merged.userEditedCategory == false)
+        #expect(merged.description == "AMAZON MARKETPLACE")
+        #expect(merged.tagIDs.isEmpty)
+    }
+
+    @Test("Pending-to-posted merge applies matching rule")
+    func pendingToPostedAppliesRule() {
+        let rule = CategorizationRule(
+            id: CategorizationRuleID("r1"),
+            categoryID: SystemCategory.shopping.id,
+            priority: 0,
+            conditions: [.titleContains("Amazon")],
+            renameTitle: "Amazon"
+        )
+        let local = Transaction(
+            id: TransactionID("t1"),
+            accountID: account,
+            externalID: "ext",
+            amount: -40,
+            postedDate: Date(timeIntervalSince1970: 100),
+            description: "AMAZON MARKETPLACE",
+            categoryID: SystemCategory.other.id,
+            isPending: true
+        )
+        let remote = Transaction(
+            id: TransactionID("t1"),
+            accountID: account,
+            externalID: "ext",
+            amount: -40,
+            postedDate: Date(timeIntervalSince1970: 200),
+            description: "AMAZON MARKETPLACE",
+            categoryID: SystemCategory.other.id,
+            isPending: false
+        )
+        let merged = MergeSyncPolicy.merge(local: local, remote: remote, rules: [rule])
+        #expect(!merged.isPending)
+        #expect(merged.categoryID == SystemCategory.shopping.id)
+        #expect(merged.userEditedCategory == true)
+        let parsed = ParseTransactionDescriptionUseCase.execute(merged.description)
+        #expect(parsed.title == "Amazon")
+    }
+
+    @Test("Still-pending update skips matching rule")
+    func stillPendingSkipsRule() {
+        let rule = CategorizationRule(
+            id: CategorizationRuleID("r1"),
+            categoryID: SystemCategory.dining.id,
+            priority: 0,
+            conditions: [.titleContains("Coffee")]
+        )
+        let local = Transaction(
+            id: TransactionID("t1"),
+            accountID: account,
+            externalID: "ext",
+            amount: -10,
+            postedDate: Date(timeIntervalSince1970: 100),
+            description: "Coffee Shop",
+            categoryID: SystemCategory.other.id,
+            isPending: true
+        )
+        let remote = Transaction(
+            id: TransactionID("t1"),
+            accountID: account,
+            externalID: "ext",
+            amount: -12,
+            postedDate: Date(timeIntervalSince1970: 150),
+            description: "Coffee Shop",
+            categoryID: SystemCategory.groceries.id,
+            isPending: true
+        )
+        let merged = MergeSyncPolicy.merge(local: local, remote: remote, rules: [rule])
+        #expect(merged.isPending)
+        #expect(merged.amount == -12)
+        #expect(merged.categoryID == SystemCategory.groceries.id)
+        #expect(merged.userEditedCategory == false)
+    }
+
     @Test("Matching rename rule rewrites merchant title and keeps location")
     func renameOnMatch() {
         let rule = CategorizationRule(

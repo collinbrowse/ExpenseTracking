@@ -3,16 +3,21 @@ import Foundation
 /// Domain merge policy: remote wins amount/date; lock / user rules / user edit gate category;
 /// matching rename rules override description; sticky category also keeps a prior local title;
 /// rule tags are additive and honor per-tag suppressions.
+///
+/// Pending remotes skip user rules (same as re-apply / assistant). Rules apply when the row posts.
 public enum MergeSyncPolicy: Sendable {
     public static func merge(
         local: Transaction?,
         remote: Transaction,
         rules: [CategorizationRule] = []
     ) -> Transaction {
+        // Align with CategorizationRuleReapplier / fetchAllForCategorization: pending is out of scope.
+        let effectiveRules = remote.isPending ? [] : rules
+
         guard let local else {
             let resolved = ResolveTransactionCategoryUseCase.execute(
                 transaction: remote,
-                rules: rules,
+                rules: effectiveRules,
                 categoryLocked: false,
                 currentCategoryID: remote.categoryID,
                 fallbackCategoryID: remote.categoryID
@@ -70,7 +75,7 @@ public enum MergeSyncPolicy: Sendable {
         if locked {
             resolved = ResolveTransactionCategoryUseCase.execute(
                 transaction: matchBase,
-                rules: rules,
+                rules: effectiveRules,
                 categoryLocked: true,
                 currentCategoryID: local.categoryID,
                 fallbackCategoryID: remote.categoryID
@@ -89,7 +94,7 @@ public enum MergeSyncPolicy: Sendable {
         } else {
             resolved = ResolveTransactionCategoryUseCase.execute(
                 transaction: matchBase,
-                rules: rules,
+                rules: effectiveRules,
                 categoryLocked: false,
                 currentCategoryID: local.categoryID,
                 fallbackCategoryID: remote.categoryID
