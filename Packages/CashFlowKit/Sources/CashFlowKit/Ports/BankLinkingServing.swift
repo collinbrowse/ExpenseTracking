@@ -116,6 +116,15 @@ public protocol SyncServing: Sendable {
     /// Live sync progress. Yields the latest value on subscribe when a sync is in flight;
     /// yields `nil` when idle. Overlapping `syncNow` callers share one sync and one stream.
     func syncProgressUpdates() -> AsyncStream<SyncProgress?>
+
+    /// Consumes a one-shot enrichment prompt produced after a large first sync.
+    func consumePendingEnrichmentPrompt() async -> EnrichmentWorkEstimate?
+
+    /// Durable multi-day history + title cleanup status for Settings.
+    func historyImportStatus() async -> HistoryImportStatus?
+
+    /// Updates the stored lookback target; deeper targets re-open backward walk only.
+    func setHistoryLookback(_ lookback: HistoryLookbackYears) async throws
 }
 
 extension SyncServing {
@@ -125,4 +134,10 @@ extension SyncServing {
             continuation.finish()
         }
     }
+
+    public func consumePendingEnrichmentPrompt() async -> EnrichmentWorkEstimate? { nil }
+
+    public func historyImportStatus() async -> HistoryImportStatus? { nil }
+
+    public func setHistoryLookback(_ lookback: HistoryLookbackYears) async throws {}
 }

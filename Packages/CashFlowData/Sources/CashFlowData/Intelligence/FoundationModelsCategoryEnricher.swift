@@ -34,7 +34,11 @@ struct GenerableCategorySuggestion {
 
 @available(iOS 26, macOS 26, *)
 public struct FoundationModelsCategoryEnricher: TransactionCategoryEnriching {
-    public init() {}
+    private let workCoordinator: FoundationModelsWorkCoordinator
+
+    public init(workCoordinator: FoundationModelsWorkCoordinator) {
+        self.workCoordinator = workCoordinator
+    }
 
     public func suggestCategory(description: String, amount: Decimal) async -> CategoryID? {
         let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -42,7 +46,7 @@ public struct FoundationModelsCategoryEnricher: TransactionCategoryEnriching {
 
         let amountText = NSDecimalNumber(decimal: amount).stringValue
         do {
-            return try await FoundationModelsWorkCoordinator.shared.runExclusive {
+            return try await workCoordinator.runExclusive {
                 let model = FoundationModelsWorkCoordinator.contentTransformationModel()
                 let session = LanguageModelSession(
                     model: model,

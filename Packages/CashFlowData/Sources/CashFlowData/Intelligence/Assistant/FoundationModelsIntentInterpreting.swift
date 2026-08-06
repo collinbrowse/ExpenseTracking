@@ -67,6 +67,9 @@ struct GenerableAssistantIntent {
     @Guide(description: "New merchant title for a one-shot rename; empty when not renaming")
     var renameTitle: String
 
+    @Guide(description: "New location for a one-shot location change; empty when not setting one")
+    var renameLocation: String
+
     @Guide(
         description: "Tag names only when the user explicitly asked to tag; otherwise empty",
         .maximumCount(6)
@@ -87,7 +90,7 @@ public struct FoundationModelsIntentInterpreting: TransactionIntentInterpreting 
 
     public init(
         availability: any OnDeviceModelAvailabilityChecking,
-        workCoordinator: FoundationModelsWorkCoordinator = .shared
+        workCoordinator: FoundationModelsWorkCoordinator
     ) {
         self.availability = availability
         self.workCoordinator = workCoordinator
@@ -221,6 +224,7 @@ public struct FoundationModelsIntentInterpreting: TransactionIntentInterpreting 
             let appliesCategory = partial.appliesCategory,
             let categoryName = partial.categoryName,
             let renameTitle = partial.renameTitle,
+            let renameLocation = partial.renameLocation,
             let tagNames = partial.tagNames,
             let prefersSavingRule = partial.prefersSavingRule,
             let conditions = partial.conditions
@@ -242,6 +246,7 @@ public struct FoundationModelsIntentInterpreting: TransactionIntentInterpreting 
             appliesCategory: appliesCategory,
             categoryName: categoryName,
             renameTitle: renameTitle,
+            renameLocation: renameLocation,
             tagNames: tagNames,
             prefersSavingRule: prefersSavingRule,
             conditions: completedConditions
@@ -266,6 +271,7 @@ public struct FoundationModelsIntentInterpreting: TransactionIntentInterpreting 
             .first { $0.name == generated.categoryName }?
             .id ?? SystemCategory.other.id
         let rename = generated.renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let renameLocation = generated.renameLocation.trimmingCharacters(in: .whitespacesAndNewlines)
         let tagNames = SanitizeAssistantIntentTagsUseCase.execute(
             appliesCategory: generated.appliesCategory,
             categoryID: categoryID,
@@ -278,6 +284,7 @@ public struct FoundationModelsIntentInterpreting: TransactionIntentInterpreting 
             appliesCategory: generated.appliesCategory,
             categoryID: categoryID,
             renameTitle: rename.isEmpty ? nil : rename,
+            renameLocation: renameLocation.isEmpty ? nil : renameLocation,
             tagNames: tagNames,
             prefersSavingRule: generated.prefersSavingRule
         )
@@ -365,11 +372,15 @@ public struct UnavailableIntentInterpreting: TransactionIntentInterpreting {
 
 public enum TransactionIntentInterpretingFactory {
     public static func make(
-        availability: any OnDeviceModelAvailabilityChecking
+        availability: any OnDeviceModelAvailabilityChecking,
+        workCoordinator: FoundationModelsWorkCoordinator
     ) -> any TransactionIntentInterpreting {
         if #available(iOS 26, macOS 26, *) {
             #if canImport(FoundationModels)
-            return FoundationModelsIntentInterpreting(availability: availability)
+            return FoundationModelsIntentInterpreting(
+                availability: availability,
+                workCoordinator: workCoordinator
+            )
             #else
             return UnavailableIntentInterpreting()
             #endif

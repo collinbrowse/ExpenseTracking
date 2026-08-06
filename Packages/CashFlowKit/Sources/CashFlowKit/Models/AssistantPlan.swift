@@ -18,22 +18,11 @@ public struct TagAssignment: Hashable, Sendable {
     }
 }
 
-/// Prior description for undo.
-public struct DescriptionAssignment: Hashable, Sendable {
-    public let transactionID: TransactionID
-    public let description: String
-
-    public init(transactionID: TransactionID, description: String) {
-        self.transactionID = transactionID
-        self.description = description
-    }
-}
-
 /// Snapshot of prior values so an applied assistant turn can be undone.
 public struct AssistantUndoSnapshot: Equatable, Sendable {
     public var previousTagAssignments: [TagAssignment]
     public var previousCategoryAssignments: [CategoryAssignment]
-    public var previousDescriptions: [DescriptionAssignment]
+    public var previousTitleLocations: [TitleLocationAssignment]
     /// Rule created or updated by this turn; undo disables it.
     public var ruleIDToDisable: CategorizationRuleID?
     public var summary: String
@@ -41,13 +30,13 @@ public struct AssistantUndoSnapshot: Equatable, Sendable {
     public init(
         previousTagAssignments: [TagAssignment] = [],
         previousCategoryAssignments: [CategoryAssignment] = [],
-        previousDescriptions: [DescriptionAssignment] = [],
+        previousTitleLocations: [TitleLocationAssignment] = [],
         ruleIDToDisable: CategorizationRuleID? = nil,
         summary: String = ""
     ) {
         self.previousTagAssignments = previousTagAssignments
         self.previousCategoryAssignments = previousCategoryAssignments
-        self.previousDescriptions = previousDescriptions
+        self.previousTitleLocations = previousTitleLocations
         self.ruleIDToDisable = ruleIDToDisable
         self.summary = summary
     }
@@ -55,14 +44,14 @@ public struct AssistantUndoSnapshot: Equatable, Sendable {
     public var isEmpty: Bool {
         previousTagAssignments.isEmpty
             && previousCategoryAssignments.isEmpty
-            && previousDescriptions.isEmpty
+            && previousTitleLocations.isEmpty
             && ruleIDToDisable == nil
     }
 
     public var affectedTransactionCount: Int {
         var ids = Set(previousTagAssignments.map(\.transactionID))
         ids.formUnion(previousCategoryAssignments.map(\.transactionID))
-        ids.formUnion(previousDescriptions.map(\.transactionID))
+        ids.formUnion(previousTitleLocations.map(\.transactionID))
         return ids.count
     }
 }
@@ -92,6 +81,7 @@ public struct AssistantIntent: Equatable, Sendable {
     public let appliesCategory: Bool
     public let categoryID: CategoryID
     public let renameTitle: String?
+    public let renameLocation: String?
     public let tagNames: [String]
     public let prefersSavingRule: Bool
 
@@ -101,6 +91,7 @@ public struct AssistantIntent: Equatable, Sendable {
         appliesCategory: Bool,
         categoryID: CategoryID,
         renameTitle: String? = nil,
+        renameLocation: String? = nil,
         tagNames: [String] = [],
         prefersSavingRule: Bool = true
     ) {
@@ -109,12 +100,13 @@ public struct AssistantIntent: Equatable, Sendable {
         self.appliesCategory = appliesCategory
         self.categoryID = categoryID
         self.renameTitle = renameTitle
+        self.renameLocation = renameLocation
         self.tagNames = tagNames
         self.prefersSavingRule = prefersSavingRule
     }
 
     public var hasAction: Bool {
-        appliesCategory || renameTitle != nil || !tagNames.isEmpty
+        appliesCategory || renameTitle != nil || renameLocation != nil || !tagNames.isEmpty
     }
 }
 
@@ -143,6 +135,7 @@ public struct AssistantProposal: Identifiable, Equatable, Sendable {
     public let appliesCategory: Bool
     public let categoryID: CategoryID
     public let renameTitle: String?
+    public let renameLocation: String?
     /// Tag names from intent; created during execute so interpret stays read-only.
     public let tagNames: [String]
     public let matchingTransactionIDs: [TransactionID]
@@ -159,6 +152,7 @@ public struct AssistantProposal: Identifiable, Equatable, Sendable {
         appliesCategory: Bool,
         categoryID: CategoryID,
         renameTitle: String? = nil,
+        renameLocation: String? = nil,
         tagNames: [String] = [],
         matchingTransactionIDs: [TransactionID]
     ) {
@@ -173,6 +167,7 @@ public struct AssistantProposal: Identifiable, Equatable, Sendable {
         self.appliesCategory = appliesCategory
         self.categoryID = categoryID
         self.renameTitle = renameTitle
+        self.renameLocation = renameLocation
         self.tagNames = tagNames
         self.matchingTransactionIDs = matchingTransactionIDs
     }

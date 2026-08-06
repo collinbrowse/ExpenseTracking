@@ -1,4 +1,5 @@
 import SwiftUI
+import CashFlowKit
 
 struct RootTabView: View {
     let container: DependencyContainer
@@ -9,6 +10,9 @@ struct RootTabView: View {
     @State private var insightsViewModel: InsightsViewModel
     @State private var accountsViewModel: AccountsViewModel
     @State private var appLockViewModel: AppLockViewModel
+    @State private var settingsViewModel: SettingsViewModel
+    @State private var pendingEnrichmentEstimate: EnrichmentWorkEstimate?
+    @State private var showEnrichmentPrompt = false
 
     init(container: DependencyContainer) {
         self.container = container
@@ -20,7 +24,7 @@ struct RootTabView: View {
                 connectivity: container.connectivity
             )
         )
-            _transactionsViewModel = State(
+        _transactionsViewModel = State(
             initialValue: TransactionsViewModel(
                 transactionRepository: container.transactionRepository,
                 accountRepository: container.accountRepository,
@@ -48,15 +52,53 @@ struct RootTabView: View {
                 useLargeDemoSeed: container.useLargeDemoSeed
             )
         )
-        _appLockViewModel = State(
-            initialValue: AppLockViewModel(
-                preferences: container.appLockPreferences,
-                authenticator: container.deviceAuthentication
+        let lock = AppLockViewModel(
+            preferences: container.appLockPreferences,
+            authenticator: container.deviceAuthentication
+        )
+        _appLockViewModel = State(initialValue: lock)
+        _settingsViewModel = State(
+            initialValue: SettingsViewModel(
+                ruleRepository: container.categorizationRuleRepository,
+                ruleApplying: container.categorizationRuleApplying,
+                accountRepository: container.accountRepository,
+                tagRepository: container.tagRepository,
+                ruleDrafting: container.categorizationRuleDrafting,
+                availabilityChecker: container.onDeviceModelAvailability,
+                appLock: lock,
+                syncServing: container.syncServing,
+                backgroundEnrichment: container.backgroundEnrichment,
+                cleanupState: container.titleCleanupState
             )
         )
     }
 
     var body: some View {
+        tabContent
+            .modifier(RootSheetsModifier(
+                accountsViewModel: accountsViewModel,
+                selectedTab: $selectedTab,
+                showEnrichmentPrompt: $showEnrichmentPrompt,
+                pendingEnrichmentEstimate: pendingEnrichmentEstimate,
+                onContinueEnrichment: continueEnrichmentDrain,
+                onDeferEnrichment: deferEnrichmentDrain
+            ))
+            .modifier(RootLifecycleModifier(
+                selectedTab: $selectedTab,
+                homeViewModel: homeViewModel,
+                transactionsViewModel: transactionsViewModel,
+                insightsViewModel: insightsViewModel,
+                accountsViewModel: accountsViewModel,
+                settingsViewModel: settingsViewModel,
+                appLockViewModel: appLockViewModel,
+                scenePhase: scenePhase,
+                onStoreEpoch: handleStoreEpoch,
+                onScenePhase: handleScenePhase
+            ))
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
         TabView(selection: $selectedTab) {
             NavigationStack {
                 HomeView(viewModel: homeViewModel)
@@ -101,15 +143,7 @@ struct RootTabView: View {
 
             NavigationStack {
                 SettingsView(
-                    viewModel: SettingsViewModel(
-                        ruleRepository: container.categorizationRuleRepository,
-                        ruleApplying: container.categorizationRuleApplying,
-                        accountRepository: container.accountRepository,
-                        tagRepository: container.tagRepository,
-                        ruleDrafting: container.categorizationRuleDrafting,
-                        availabilityChecker: container.onDeviceModelAvailability,
-                        appLock: appLockViewModel
-                    ),
+                    viewModel: settingsViewModel,
                     accountsViewModel: accountsViewModel,
                     onSelectAccount: { accountID in
                         Task {
@@ -120,104 +154,234 @@ struct RootTabView: View {
                 )
             }
             .tabItem { Label("Settings", systemImage: "gearshape") }
+            .badge(settingsViewModel.settingsTabBadge)
             .tag(AppTab.settings)
         }
-        .sheet(isPresented: $accountsViewModel.showOnboarding, onDismiss: {
-            // Present link sheet only after onboarding fully dismisses (stacked sheets fail).
-            if accountsViewModel.pendingLinkAfterOnboarding {
-                selectedTab = .settings
-                accountsViewModel.presentPendingLinkIfNeeded()
+    }
+
+    private func handleStoreEpoch() async {
+        await homeViewModel.reload(preferLoadingIndicator: !homeViewModel.hasData)
+        await transactionsViewModel.resetAndLoad()
+        await insightsViewModel.reload(preferLoadingIndicator: false)
+        await presentEnrichmentPromptIfNeeded()
+        await settingsViewModel.reloadHistoryStatus()
+    }
+
+    private func handleBecameActive() async {
+        await presentEnrichmentPromptIfNeeded()
+        // Do not silently enrich here. Post-sync and BG tasks own opportunistic work;
+        // Settings' idle "N titles left" should only move when cleanup is visible or the
+        // user opens / refreshes the screen — not while they're staring at it.
+        if settingsViewModel.isCleaningUpTitles {
+            return
+        }
+        await settingsViewModel.reloadHistoryStatus(refreshTitleBacklog: false)
+    }
+
+    private func handleScenePhase(_ phase: ScenePhase) async {
+        await container.backgroundEnrichment.setAppForeground(phase == .active)
+        if phase == .active {
+            await handleBecameActive()
+        }
+    }
+
+    private func presentEnrichmentPromptIfNeeded() async {
+        guard let estimate = await container.syncServing.consumePendingEnrichmentPrompt(),
+              estimate.shouldPrompt
+        else { return }
+        pendingEnrichmentEstimate = estimate
+        showEnrichmentPrompt = true
+    }
+
+    private func continueEnrichmentDrain() {
+        showEnrichmentPrompt = false
+        let expected = pendingEnrichmentEstimate?.untitledCount
+        Task {
+            // Same path as Settings → Clean up transaction titles.
+            await settingsViewModel.startTitleCleanup(expectedUntitled: expected)
+        }
+    }
+
+    private func deferEnrichmentDrain() {
+        showEnrichmentPrompt = false
+        Task {
+            _ = await container.transactionEnrichment.enrichAfterSync(skipIfLargeBacklog: false)
+            await settingsViewModel.reloadHistoryStatus()
+        }
+    }
+}
+
+private struct RootSheetsModifier: ViewModifier {
+    @Bindable var accountsViewModel: AccountsViewModel
+    @Binding var selectedTab: AppTab
+    @Binding var showEnrichmentPrompt: Bool
+    let pendingEnrichmentEstimate: EnrichmentWorkEstimate?
+    let onContinueEnrichment: () -> Void
+    let onDeferEnrichment: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $accountsViewModel.showOnboarding, onDismiss: {
+                if accountsViewModel.pendingLinkAfterOnboarding {
+                    selectedTab = .settings
+                    accountsViewModel.presentPendingLinkIfNeeded()
+                }
+            }) {
+                OnboardingView(viewModel: accountsViewModel)
             }
-        }) {
-            OnboardingView(viewModel: accountsViewModel)
-        }
-        .sheet(isPresented: $accountsViewModel.showLinkSheet) {
-            SimpleFINLinkSheet(viewModel: accountsViewModel)
-        }
-        .alert(item: $accountsViewModel.errorAlert) { alert in
-            switch alert.primaryAction {
-            case .reconnect:
-                Alert(
-                    title: Text(alert.title),
-                    message: Text(alert.message),
-                    primaryButton: .default(Text("Reconnect")) {
-                        accountsViewModel.performErrorAction(.reconnect)
-                    },
-                    secondaryButton: .cancel(Text("OK")) {
-                        accountsViewModel.dismissErrorAlert()
-                    }
+            .sheet(isPresented: $accountsViewModel.showLinkSheet) {
+                SimpleFINLinkSheet(viewModel: accountsViewModel)
+            }
+            .alert(item: $accountsViewModel.errorAlert) { alert in
+                accountsErrorAlert(alert)
+            }
+            .sheet(isPresented: $showEnrichmentPrompt) {
+                EnrichmentPromptSheet(
+                    estimate: pendingEnrichmentEstimate,
+                    onContinue: onContinueEnrichment,
+                    onNotNow: onDeferEnrichment
                 )
-            case .syncNow:
-                Alert(
-                    title: Text(alert.title),
-                    message: Text(alert.message),
-                    primaryButton: .default(Text("Sync Now")) {
-                        accountsViewModel.performErrorAction(.syncNow)
-                    },
-                    secondaryButton: .cancel(Text("OK")) {
-                        accountsViewModel.dismissErrorAlert()
-                    }
-                )
-            case .dismissOnly:
-                Alert(
-                    title: Text(alert.title),
-                    message: Text(alert.message),
-                    dismissButton: .default(Text("OK")) {
-                        accountsViewModel.dismissErrorAlert()
-                    }
-                )
             }
+    }
+
+    private func accountsErrorAlert(_ alert: AccountsErrorAlert) -> Alert {
+        switch alert.primaryAction {
+        case .reconnect:
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                primaryButton: .default(Text("Reconnect")) {
+                    accountsViewModel.performErrorAction(.reconnect)
+                },
+                secondaryButton: .cancel(Text("OK")) {
+                    accountsViewModel.dismissErrorAlert()
+                }
+            )
+        case .syncNow:
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                primaryButton: .default(Text("Sync Now")) {
+                    accountsViewModel.performErrorAction(.syncNow)
+                },
+                secondaryButton: .cancel(Text("OK")) {
+                    accountsViewModel.dismissErrorAlert()
+                }
+            )
+        case .dismissOnly:
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK")) {
+                    accountsViewModel.dismissErrorAlert()
+                }
+            )
         }
-        .onChange(of: accountsViewModel.showLinkSheet) { _, isPresented in
-            if isPresented {
-                selectedTab = .settings
-            }
-        }
-        .onChange(of: accountsViewModel.storeEpoch) { _, _ in
-            Task {
-                await homeViewModel.reload(preferLoadingIndicator: !homeViewModel.hasData)
-                await transactionsViewModel.resetAndLoad()
-                await insightsViewModel.reload(preferLoadingIndicator: false)
-            }
-        }
-        .onChange(of: selectedTab) { _, tab in
-            switch tab {
-            case .home:
-                Task { await homeViewModel.reload(preferLoadingIndicator: false) }
-            case .settings:
-                // Home / Transactions sync can update durable syncIssue while this tab is idle.
-                Task { await accountsViewModel.refreshStatus() }
-            case .insights:
-                Task { await insightsViewModel.reload(preferLoadingIndicator: false) }
-            case .transactions:
-                // Assistant (and other mutations) may have changed categories/tags while
-                // this tab stayed mounted — reload so the list/editor aren't stale.
-                Task {
-                    await transactionsViewModel.refreshTagsIfNeeded()
-                    await transactionsViewModel.resetAndLoad()
+    }
+}
+
+private struct RootLifecycleModifier: ViewModifier {
+    @Binding var selectedTab: AppTab
+    let homeViewModel: HomeViewModel
+    let transactionsViewModel: TransactionsViewModel
+    let insightsViewModel: InsightsViewModel
+    @Bindable var accountsViewModel: AccountsViewModel
+    let settingsViewModel: SettingsViewModel
+    @Bindable var appLockViewModel: AppLockViewModel
+    let scenePhase: ScenePhase
+    let onStoreEpoch: () async -> Void
+    let onScenePhase: (ScenePhase) async -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: accountsViewModel.showLinkSheet) { _, isPresented in
+                if isPresented {
+                    selectedTab = .settings
                 }
             }
-        }
-        .overlay {
-            if appLockViewModel.shouldShowOverlay {
-                AppLockGateView(
-                    biometryDisplayName: appLockViewModel.biometryDisplayName,
-                    showUnlockControls: appLockViewModel.showUnlockControls,
-                    isAuthenticating: appLockViewModel.isAuthenticating,
-                    errorMessage: appLockViewModel.unlockErrorMessage,
-                    onUnlock: {
-                        Task { await appLockViewModel.unlock() }
-                    }
-                )
-                .transition(.opacity)
+            .onChange(of: accountsViewModel.storeEpoch) { _, _ in
+                Task { await onStoreEpoch() }
             }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            appLockViewModel.handleScenePhase(phase)
-        }
+            .onChange(of: selectedTab) { _, tab in
+                handleTabChange(tab)
+            }
+            .overlay {
+                if appLockViewModel.shouldShowOverlay {
+                    AppLockGateView(
+                        biometryDisplayName: appLockViewModel.biometryDisplayName,
+                        showUnlockControls: appLockViewModel.showUnlockControls,
+                        isAuthenticating: appLockViewModel.isAuthenticating,
+                        errorMessage: appLockViewModel.unlockErrorMessage,
+                        onUnlock: {
+                            Task { await appLockViewModel.unlock() }
+                        }
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                appLockViewModel.handleScenePhase(phase)
+                Task { await onScenePhase(phase) }
+            }
         .onAppear {
             appLockViewModel.handleScenePhase(scenePhase)
             appLockViewModel.onAppear()
+            settingsViewModel.startObservingEnrichmentProgress()
+            Task { await onScenePhase(scenePhase) }
         }
+    }
+
+    private func handleTabChange(_ tab: AppTab) {
+        switch tab {
+        case .home:
+            Task { await homeViewModel.reload(preferLoadingIndicator: false) }
+        case .settings:
+            Task {
+                await accountsViewModel.refreshStatus()
+                await settingsViewModel.reloadHistoryStatus()
+            }
+        case .insights:
+            Task { await insightsViewModel.reload(preferLoadingIndicator: false) }
+        case .transactions:
+            Task {
+                await transactionsViewModel.refreshTagsIfNeeded()
+                await transactionsViewModel.resetAndLoad()
+            }
+        }
+    }
+}
+
+private struct EnrichmentPromptSheet: View {
+    let estimate: EnrichmentWorkEstimate?
+    let onContinue: () -> Void
+    let onNotNow: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Clean up transaction titles?")
+                    .font(.title2.bold())
+                if let estimate {
+                    Text(
+                        "\(estimate.untitledCount) transactions still show raw bank text. About \(estimate.distinctMerchantLookups) unique merchants need a one-time lookup."
+                    )
+                    .foregroundStyle(.secondary)
+                }
+                Text("Cleanup uses on-device Apple Intelligence. Progress shows under Settings → Transaction Titles (and in the system indicator if you leave).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Continue Cleanup", action: onContinue)
+                    .buttonStyle(.borderedProminent)
+                    .frame(maxWidth: .infinity)
+                Button("Not Now", action: onNotNow)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding()
+            .navigationTitle("Title Cleanup")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium])
+        .accessibilityIdentifier("enrichment.prompt")
     }
 }

@@ -184,7 +184,7 @@ struct MergeSyncPolicyTests {
         )
         let merged = MergeSyncPolicy.merge(local: local, remote: remote)
         #expect(merged.amount == 20)
-        #expect(merged.description == "old")
+        #expect(merged.description == "new")
         #expect(merged.postedDate == remote.postedDate)
         #expect(merged.categoryID == SystemCategory.dining.id)
         #expect(merged.userEditedCategory == true)

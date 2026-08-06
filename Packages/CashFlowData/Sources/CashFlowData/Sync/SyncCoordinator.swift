@@ -8,6 +8,10 @@ public actor SyncCoordinator: SyncServing {
     /// After history backfill, re-fetch this many days before the watermark so
     /// pending→posted updates with older `posted` dates still arrive.
     public static let incrementalLookbackDays = 30
+    /// Cap SimpleFIN `/accounts` windows per sync to stay under daily quota.
+    public static let maxBackfillWindowsPerSync = 8
+    /// Stop walking older history when the bank returns this many empty windows in a row.
+    public static let consecutiveEmptyWindowsToStop = 2
 
     private let modelContainer: ModelContainer
     private let bankLinking: CompositeBankLinkingService
@@ -17,6 +21,7 @@ public actor SyncCoordinator: SyncServing {
     private let logger = Logger(subsystem: "com.expensetracking", category: "sync")
 
     private var inFlight: Task<LinkedConnection, Error>?
+    private var pendingEnrichmentPrompt: EnrichmentWorkEstimate?
 
     public init(
         modelContainer: ModelContainer,
@@ -75,6 +80,41 @@ public actor SyncCoordinator: SyncServing {
         progressHub.subscribe()
     }
 
+    public func consumePendingEnrichmentPrompt() async -> EnrichmentWorkEstimate? {
+        defer { pendingEnrichmentPrompt = nil }
+        return pendingEnrichmentPrompt
+    }
+
+    public func historyImportStatus() async -> HistoryImportStatus? {
+        let context = ModelContext(modelContainer)
+        guard let connection = try? fetchConnection(context: context) else { return nil }
+        let untitled = (try? countNeedingEnrichment(context: context)) ?? 0
+        let total = (try? countPosted(context: context)) ?? 0
+        let distinct = (try? countDistinctNeedingEnrichment(context: context)) ?? 0
+        let complete = connection.historyComplete || connection.historyBackfillComplete
+        return HistoryImportStatusBuilding.build(
+            lookback: connection.lookback,
+            earliestFetchedDate: connection.earliestFetchedDate,
+            historyComplete: complete,
+            lastBackfillAdvanceAt: connection.lastBackfillAdvanceAt,
+            untitledCount: untitled,
+            totalPostedCount: total,
+            distinctMerchantLookupsRemaining: distinct
+        )
+    }
+
+    public func setHistoryLookback(_ lookback: HistoryLookbackYears) async throws {
+        let context = ModelContext(modelContainer)
+        guard let connection = try fetchConnection(context: context) else { return }
+        let previous = connection.lookback
+        connection.lookbackYearsRaw = lookback.rawValue
+        if lookback.startDate < previous.startDate {
+            connection.historyComplete = false
+            connection.historyBackfillComplete = false
+        }
+        try context.save()
+    }
+
     public func syncNow() async throws -> LinkedConnection {
         if let inFlight {
             return try await inFlight.value
@@ -103,34 +143,68 @@ public actor SyncCoordinator: SyncServing {
         try Task.checkCancellation()
         emit(SyncProgress(phase: .preparing))
 
-        // Restore durable Demo / SimpleFIN mode before fetch — in-memory link state
-        // is lost on process death and resolveModeIfNeeded cannot see ConnectionEntity.
         _ = await connectionStatus()
 
         let context = ModelContext(modelContainer)
         let existing = try fetchConnection(context: context)
-        let needsHistoryBackfill = existing?.historyBackfillComplete != true
-        let startDate: Date?
-        if !needsHistoryBackfill, let watermark = existing?.lastSuccessfulSyncAt {
-            startDate = Calendar.current.date(
+        let lookback = existing?.lookback ?? HistoryLookbackYears.default
+        let targetStart = lookback.startDate
+        let historyDone = existing.map { $0.historyComplete || $0.historyBackfillComplete } ?? false
+        let providerNameHint = await bankLinking.activeProviderName()
+        let isDemo = existing?.isDemo == true || providerNameHint == "Demo"
+
+        let fetchStart: Date
+        let fetchEnd: Date?
+        let isBackfill: Bool
+        let maxWindows: Int?
+        let stopEmpty: Int?
+
+        if historyDone, let watermark = existing?.lastSuccessfulSyncAt {
+            fetchStart = Calendar.current.date(
                 byAdding: .day,
                 value: -Self.incrementalLookbackDays,
                 to: watermark
-            )
+            ) ?? watermark
+            fetchEnd = nil
+            isBackfill = false
+            maxWindows = nil
+            stopEmpty = nil
+        } else if isDemo {
+            // Demo seeds the full lookback in one shot.
+            fetchStart = targetStart
+            fetchEnd = nil
+            isBackfill = true
+            maxWindows = nil
+            stopEmpty = nil
         } else {
-            // Full lookback until one successful historical sync completes.
-            // Watermark-only syncs must not run before that or older windows are never requested again.
-            startDate = Calendar.current.date(byAdding: .year, value: -2, to: .now)
+            let chunkEnd = existing?.earliestFetchedDate ?? .now
+            let stepDays = SimpleFINClient.maxAccountsRangeDays - SimpleFINClient.windowOverlapDays
+            let maxSpanDays = Self.maxBackfillWindowsPerSync * stepDays
+            let spanStart = Calendar.current.date(
+                byAdding: .day,
+                value: -maxSpanDays,
+                to: chunkEnd
+            ) ?? targetStart
+            fetchStart = max(targetStart, spanStart)
+            fetchEnd = chunkEnd
+            isBackfill = true
+            maxWindows = Self.maxBackfillWindowsPerSync
+            stopEmpty = Self.consecutiveEmptyWindowsToStop
         }
 
         do {
-            let payload = try await bankLinking.fetchAccounts(
-                startDate: startDate,
-                endDate: nil,
+            let phase: SyncProgress.Phase = isBackfill && !historyDone
+                ? .backfillingHistory
+                : .downloading
+            let result = try await bankLinking.fetchAccountsWindowed(
+                startDate: fetchStart,
+                endDate: fetchEnd,
+                maxWindows: maxWindows,
+                stopAfterConsecutiveEmpty: stopEmpty,
                 onWindowProgress: { [progressHub] completed, total in
                     progressHub.emit(
                         SyncProgress(
-                            phase: .downloading,
+                            phase: phase,
                             completedUnits: completed,
                             totalUnits: total
                         )
@@ -139,7 +213,7 @@ public actor SyncCoordinator: SyncServing {
             )
             try Task.checkCancellation()
             emit(SyncProgress(phase: .saving))
-            try SyncMergeEngine.merge(payload: payload, into: context)
+            try SyncMergeEngine.merge(payload: result.payload, into: context)
 
             let providerName = await bankLinking.activeProviderName()
             let connection = try upsertConnection(
@@ -148,14 +222,35 @@ public actor SyncCoordinator: SyncServing {
                 needsReauth: false,
                 syncedAt: .now,
                 isDemo: providerName == "Demo",
-                historyBackfillComplete: true
+                historyBackfillComplete: existing?.historyBackfillComplete ?? false
             )
+
+            if isBackfill {
+                let previousEarliest = connection.earliestFetchedDate
+                let newEarliest = previousEarliest.map { min($0, result.fetchedStart) } ?? result.fetchedStart
+                connection.earliestFetchedDate = newEarliest
+                connection.lastBackfillAdvanceAt = .now
+
+                let reachedTarget = newEarliest <= targetStart.addingTimeInterval(86_400)
+                let bankRanDry = result.consecutiveEmptyTrailing >= Self.consecutiveEmptyWindowsToStop
+                let demoDone = providerName == "Demo"
+                if demoDone || reachedTarget || bankRanDry {
+                    connection.historyComplete = true
+                    connection.historyBackfillComplete = true
+                } else {
+                    connection.historyComplete = false
+                    connection.historyBackfillComplete = false
+                }
+            } else if connection.earliestFetchedDate == nil {
+                connection.earliestFetchedDate = fetchStart
+            }
+
             try context.save()
             try writeNetSnapshot(context: context)
 
-            // Best-effort on-device enrichment; never fails the sync.
             if let enrichment {
-                await enrichment.enrichAfterSync { [progressHub] completed, total in
+                let estimate = await enrichment.enrichAfterSync(skipIfLargeBacklog: true) {
+                    [progressHub] completed, total in
                     progressHub.emit(
                         SyncProgress(
                             phase: .enriching,
@@ -164,6 +259,9 @@ public actor SyncCoordinator: SyncServing {
                         )
                     )
                 }
+                if let estimate, estimate.shouldPrompt {
+                    pendingEnrichmentPrompt = estimate
+                }
             }
 
             return LinkedConnection(
@@ -171,7 +269,7 @@ public actor SyncCoordinator: SyncServing {
                 providerName: providerName,
                 needsReauth: false,
                 lastSuccessfulSyncAt: connection.lastSuccessfulSyncAt,
-                providerMessages: payload.providerMessages.map(Self.sanitize)
+                providerMessages: result.payload.providerMessages.map(Self.sanitize)
             )
         } catch let error as CashFlowError {
             if case .unauthorized = error {
@@ -252,6 +350,21 @@ public actor SyncCoordinator: SyncServing {
         )
         context.insert(entity)
         return entity
+    }
+
+    private func countNeedingEnrichment(context: ModelContext) throws -> Int {
+        try EnrichmentBacklogQuery.count(context: context)
+    }
+
+    private func countPosted(context: ModelContext) throws -> Int {
+        let descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate { !$0.isPending }
+        )
+        return try context.fetchCount(descriptor)
+    }
+
+    private func countDistinctNeedingEnrichment(context: ModelContext) throws -> Int {
+        try EnrichmentBacklogQuery.distinctDescriptionCount(context: context)
     }
 
     private static func sanitize(_ string: String) -> String {

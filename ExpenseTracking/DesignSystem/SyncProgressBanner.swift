@@ -18,6 +18,11 @@ enum SyncProgressFormatting {
                 return "Improving labels… \(progress.completedUnits) of \(total)"
             }
             return "Improving labels…"
+        case .backfillingHistory:
+            if let total = progress.totalUnits, total > 0 {
+                return "Importing history… \(progress.completedUnits) of \(total)"
+            }
+            return "Importing history…"
         }
     }
 }

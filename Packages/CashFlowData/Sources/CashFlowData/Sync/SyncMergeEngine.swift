@@ -188,6 +188,7 @@ enum SyncMergeEngine {
             existing.categoryLocked = merged.categoryLocked
             existing.enrichedTitle = merged.enrichedTitle
             existing.enrichedLocation = merged.enrichedLocation
+            existing.titleSourceRaw = EntityMappers.titleSourceRaw(from: merged.titleSource)
             existing.suppressedTagIDsData = try EntityMappers.encodeTagIDs(merged.suppressedTagIDs)
             try applyTags(merged.tagIDs, to: existing, context: context)
         } else {
@@ -206,6 +207,9 @@ enum SyncMergeEngine {
                 syncKey: syncKey,
                 account: account,
                 categoryLocked: false,
+                enrichedTitle: merged.enrichedTitle,
+                enrichedLocation: merged.enrichedLocation,
+                titleSourceRaw: EntityMappers.titleSourceRaw(from: merged.titleSource),
                 suppressedTagIDsData: try EntityMappers.encodeTagIDs(merged.suppressedTagIDs)
             )
             context.insert(entity)

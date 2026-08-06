@@ -9,6 +9,9 @@ struct ExpenseTrackingApp: App {
         let largeSeed = ProcessInfo.processInfo.arguments.contains("-largeDemoSeed")
         // Resilient SwiftData bootstrap — never crash launch on store migration.
         container = DependencyContainer(largeDemoSeed: largeSeed)
+        // BGProcessingTask handlers must register before launch finishes.
+        container.backgroundEnrichment.registerHandlers()
+        container.backgroundEnrichment.scheduleUnattendedContinuation()
     }
 
     var body: some Scene {

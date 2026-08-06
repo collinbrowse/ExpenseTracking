@@ -78,25 +78,6 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         try context.save()
     }
 
-    public func updateDescription(
-        transactionID: TransactionID,
-        description: String
-    ) async throws {
-        let context = ModelContext(modelContainer)
-        let id = transactionID.rawValue
-        let predicate = #Predicate<TransactionEntity> { $0.id == id }
-        var descriptor = FetchDescriptor<TransactionEntity>(predicate: predicate)
-        descriptor.fetchLimit = 1
-        guard let entity = try context.fetch(descriptor).first else {
-            throw CashFlowError.persistence(message: "Transaction not found")
-        }
-        entity.transactionDescription = description
-        // Description changed — invalidate local enrichment so post-sync can refill.
-        entity.enrichedTitle = nil
-        entity.enrichedLocation = nil
-        try context.save()
-    }
-
     public func updateTags(
         transactionID: TransactionID,
         tagIDs: [TagID]
@@ -186,7 +167,9 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
     public func updateEnrichment(
         transactionID: TransactionID,
         title: String,
-        location: String?
+        location: String?,
+        source: TitleSource,
+        clearLocation: Bool
     ) async throws {
         let context = ModelContext(modelContainer)
         let id = transactionID.rawValue
@@ -196,14 +179,58 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         guard let entity = try context.fetch(descriptor).first else {
             throw CashFlowError.persistence(message: "Transaction not found")
         }
+        let existing = EntityMappers.titleSource(from: entity.titleSourceRaw)
+        guard TitleSource.canOverwrite(existing: existing, with: source) else {
+            return
+        }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else {
             throw CashFlowError.persistence(message: "Enriched title can't be empty.")
         }
-        let trimmedLocation = location?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
         entity.enrichedTitle = trimmedTitle
-        entity.enrichedLocation = (trimmedLocation?.isEmpty == false) ? trimmedLocation : nil
+        entity.titleSourceRaw = source.rawValue
+        if clearLocation {
+            entity.enrichedLocation = nil
+        } else if let location {
+            let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+            entity.enrichedLocation = trimmedLocation.isEmpty ? nil : trimmedLocation
+        }
+        try context.save()
+    }
+
+    public func markEnrichmentSkipped(transactionID: TransactionID) async throws {
+        let context = ModelContext(modelContainer)
+        let id = transactionID.rawValue
+        let predicate = #Predicate<TransactionEntity> { $0.id == id }
+        var descriptor = FetchDescriptor<TransactionEntity>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        guard let entity = try context.fetch(descriptor).first else {
+            throw CashFlowError.persistence(message: "Transaction not found")
+        }
+        let existing = EntityMappers.titleSource(from: entity.titleSourceRaw)
+        guard TitleSource.canOverwrite(existing: existing, with: .skipped) else {
+            return
+        }
+        // Keep raw bank text in the UI; only leave the untitled backlog.
+        entity.enrichedTitle = nil
+        entity.enrichedLocation = nil
+        entity.titleSourceRaw = TitleSource.skipped.rawValue
+        try context.save()
+    }
+
+    public func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {
+        guard !assignments.isEmpty else { return }
+        let context = ModelContext(modelContainer)
+        for assignment in assignments {
+            let id = assignment.transactionID.rawValue
+            let predicate = #Predicate<TransactionEntity> { $0.id == id }
+            var descriptor = FetchDescriptor<TransactionEntity>(predicate: predicate)
+            descriptor.fetchLimit = 1
+            guard let entity = try context.fetch(descriptor).first else { continue }
+            entity.enrichedTitle = assignment.title
+            entity.enrichedLocation = assignment.location
+            entity.titleSourceRaw = EntityMappers.titleSourceRaw(from: assignment.titleSource)
+        }
         try context.save()
     }
 
@@ -217,14 +244,22 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
 
     public func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction] {
         let context = ModelContext(modelContainer)
-        let descriptor = FetchDescriptor<TransactionEntity>(
-            predicate: #Predicate { !$0.isPending },
+        var descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: EnrichmentBacklogQuery.predicate,
             sortBy: [SortDescriptor(\.postedDate, order: .reverse)]
         )
-        let entities = try context.fetch(descriptor)
-            .filter { $0.enrichedTitle == nil || $0.enrichedTitle?.isEmpty == true }
-            .prefix(max(0, limit))
-        return entities.map(EntityMappers.transaction(from:))
+        descriptor.fetchLimit = max(0, limit)
+        return try context.fetch(descriptor).map(EntityMappers.transaction(from:))
+    }
+
+    public func countNeedingEnrichment() async throws -> Int {
+        try EnrichmentBacklogQuery.count(context: ModelContext(modelContainer))
+    }
+
+    public func countDistinctDescriptionsNeedingEnrichment() async throws -> Int {
+        try EnrichmentBacklogQuery.distinctDescriptionCount(
+            context: ModelContext(modelContainer)
+        )
     }
 
     /// Keyset scan that can walk the full store (no hard 1k cap) for infinite scrolling.

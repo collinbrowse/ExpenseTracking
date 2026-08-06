@@ -53,15 +53,4 @@ struct ParseTransactionDescriptionUseCaseTests {
         #expect(parsed.title == "PAYROLL ACME CORP")
         #expect(parsed.location == nil)
     }
-
-    @Test("Recombine keeps location after title edit")
-    func recombinePreservesLocation() {
-        let combined = ParsedTransactionDescription.recombine(
-            title: "Kroger",
-            location: "Fort Collins CO"
-        )
-        let again = ParseTransactionDescriptionUseCase.execute(combined)
-        #expect(again.title == "Kroger")
-        #expect(again.location == "Fort Collins CO")
-    }
 }

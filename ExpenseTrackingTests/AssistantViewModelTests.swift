@@ -292,7 +292,6 @@ private final class AssistantMockTransactionRepository: TransactionRepository, @
         categoryID: CategoryID,
         categoryLocked: Bool
     ) async throws {}
-    func updateDescription(transactionID: TransactionID, description: String) async throws {}
     func updateTags(transactionID: TransactionID, tagIDs: [TagID]) async throws {}
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {
         categoryAssignments.append(contentsOf: assignments)
@@ -303,9 +302,17 @@ private final class AssistantMockTransactionRepository: TransactionRepository, @
     func updateEnrichment(
         transactionID: TransactionID,
         title: String,
-        location: String?
+        location: String?,
+        source: TitleSource,
+        clearLocation: Bool
     ) async throws {}
+    func markEnrichmentSkipped(transactionID: TransactionID) async throws {}
     func fetchAllForCategorization() async throws -> [Transaction] { [] }
+    
+    func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {}
+    func countNeedingEnrichment() async throws -> Int { 0 }
+    func countDistinctDescriptionsNeedingEnrichment() async throws -> Int { 0 }
+
     func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction] { [] }
 }
 

@@ -36,6 +36,7 @@ public actor SwiftDataCategorizationRuleRepository: CategorizationRuleRepository
             existing.isEnabled = rule.isEnabled
             existing.conditionsData = data
             existing.renameTitle = rule.renameTitle
+            existing.renameLocation = rule.renameLocation
             existing.appliesCategory = rule.appliesCategory
             existing.tagIDsData = tagData
             // Preserve provenance when editing an assistant-created rule.
@@ -50,6 +51,7 @@ public actor SwiftDataCategorizationRuleRepository: CategorizationRuleRepository
                     isEnabled: rule.isEnabled,
                     conditionsData: data,
                     renameTitle: rule.renameTitle,
+                    renameLocation: rule.renameLocation,
                     appliesCategory: rule.appliesCategory,
                     tagIDsData: tagData,
                     createdByAssistant: rule.createdByAssistant,

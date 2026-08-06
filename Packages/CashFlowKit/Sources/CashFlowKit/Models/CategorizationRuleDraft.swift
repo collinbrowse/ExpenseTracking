@@ -10,6 +10,7 @@ public struct CategorizationRuleDraft: Equatable, Sendable {
     public let action: Action
     public let categoryID: CategoryID
     public let renameTitle: String?
+    public let renameLocation: String?
     public let conditions: [CategorizationCondition]
     public let explanation: String
 
@@ -17,12 +18,14 @@ public struct CategorizationRuleDraft: Equatable, Sendable {
         action: Action,
         categoryID: CategoryID,
         renameTitle: String? = nil,
+        renameLocation: String? = nil,
         conditions: [CategorizationCondition],
         explanation: String = ""
     ) {
         self.action = action
         self.categoryID = categoryID
         self.renameTitle = renameTitle
+        self.renameLocation = renameLocation
         self.conditions = conditions
         self.explanation = explanation
     }
@@ -42,6 +45,7 @@ public struct CategorizationRuleDraft: Equatable, Sendable {
                 isEnabled: isEnabled,
                 conditions: conditions,
                 renameTitle: nil,
+                renameLocation: nil,
                 appliesCategory: true,
                 tagIDs: [],
                 createdByAssistant: false
@@ -54,6 +58,7 @@ public struct CategorizationRuleDraft: Equatable, Sendable {
                 isEnabled: isEnabled,
                 conditions: conditions,
                 renameTitle: renameTitle,
+                renameLocation: renameLocation,
                 appliesCategory: false,
                 tagIDs: [],
                 createdByAssistant: false

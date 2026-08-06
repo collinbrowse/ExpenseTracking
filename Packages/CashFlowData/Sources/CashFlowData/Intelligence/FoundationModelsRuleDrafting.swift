@@ -60,8 +60,11 @@ struct GenerableRuleDraft {
     )
     var categoryName: String
 
-    @Guide(description: "New merchant title when action is rename; empty for categorize")
+    @Guide(description: "New merchant title when action is rename; empty for categorize or location-only")
     var renameTitle: String
+
+    @Guide(description: "New location when action is rename; empty when not setting one")
+    var renameLocation: String
 
     @Guide(description: "AND conditions that must all match", .maximumCount(6))
     var conditions: [GenerableRuleCondition]
@@ -77,7 +80,7 @@ public struct FoundationModelsRuleDrafting: CategorizationRuleDrafting {
 
     public init(
         availability: any OnDeviceModelAvailabilityChecking,
-        workCoordinator: FoundationModelsWorkCoordinator = .shared
+        workCoordinator: FoundationModelsWorkCoordinator
     ) {
         self.availability = availability
         self.workCoordinator = workCoordinator
@@ -148,20 +151,22 @@ public struct FoundationModelsRuleDrafting: CategorizationRuleDrafting {
             .id ?? SystemCategory.other.id
 
         let rename = generated.renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let renameLocation = generated.renameLocation.trimmingCharacters(in: .whitespacesAndNewlines)
         let conditions = generated.conditions.compactMap { condition -> CategorizationCondition? in
             mapCondition(condition, accounts: accounts)
         }
         guard !conditions.isEmpty else {
             throw CashFlowError.intelligence(message: "Couldn't find any valid rule conditions.")
         }
-        if action == .rename, rename.isEmpty {
-            throw CashFlowError.intelligence(message: "Rename rules need a new merchant title.")
+        if action == .rename, rename.isEmpty, renameLocation.isEmpty {
+            throw CashFlowError.intelligence(message: "Rename rules need a new merchant title or location.")
         }
 
         return CategorizationRuleDraft(
             action: action,
             categoryID: categoryID,
-            renameTitle: action == .rename ? rename : nil,
+            renameTitle: action == .rename && !rename.isEmpty ? rename : nil,
+            renameLocation: action == .rename && !renameLocation.isEmpty ? renameLocation : nil,
             conditions: conditions,
             explanation: generated.explanation.trimmingCharacters(in: .whitespacesAndNewlines)
         )
@@ -231,11 +236,15 @@ public struct UnavailableCategorizationRuleDrafting: CategorizationRuleDrafting 
 
 public enum CategorizationRuleDraftingFactory {
     public static func make(
-        availability: any OnDeviceModelAvailabilityChecking
+        availability: any OnDeviceModelAvailabilityChecking,
+        workCoordinator: FoundationModelsWorkCoordinator
     ) -> any CategorizationRuleDrafting {
         if #available(iOS 26, macOS 26, *) {
             #if canImport(FoundationModels)
-            return FoundationModelsRuleDrafting(availability: availability)
+            return FoundationModelsRuleDrafting(
+                availability: availability,
+                workCoordinator: workCoordinator
+            )
             #else
             return UnavailableCategorizationRuleDrafting()
             #endif

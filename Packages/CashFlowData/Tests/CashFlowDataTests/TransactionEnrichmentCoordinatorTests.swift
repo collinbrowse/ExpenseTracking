@@ -31,7 +31,8 @@ struct TransactionEnrichmentCoordinatorTests {
             ),
             categoryEnricher: StubCategoryEnricher(id: SystemCategory.dining.id),
             transactionRepository: txs,
-            ruleRepository: EmptyRuleRepository()
+            ruleRepository: EmptyRuleRepository(),
+            workCoordinator: FoundationModelsWorkCoordinator()
         )
         await coordinator.enrichAfterSync()
         #expect(txs.enrichmentUpdates.isEmpty)
@@ -75,7 +76,8 @@ struct TransactionEnrichmentCoordinatorTests {
             ),
             categoryEnricher: StubCategoryEnricher(id: SystemCategory.dining.id),
             transactionRepository: txs,
-            ruleRepository: EmptyRuleRepository()
+            ruleRepository: EmptyRuleRepository(),
+            workCoordinator: FoundationModelsWorkCoordinator()
         )
         await coordinator.enrichAfterSync()
         #expect(txs.enrichmentUpdates.count == 1)
@@ -136,7 +138,6 @@ private final class MockEnrichmentTransactionRepository: TransactionRepository, 
         categoryID: CategoryID,
         categoryLocked: Bool
     ) async throws {}
-    func updateDescription(transactionID: TransactionID, description: String) async throws {}
     func updateTags(transactionID: TransactionID, tagIDs: [TagID]) async throws {}
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {
         categoryAssignments.append(contentsOf: assignments)
@@ -145,11 +146,22 @@ private final class MockEnrichmentTransactionRepository: TransactionRepository, 
     func updateEnrichment(
         transactionID: TransactionID,
         title: String,
-        location: String?
+        location: String?,
+        source: TitleSource,
+        clearLocation: Bool
     ) async throws {
         enrichmentUpdates.append((transactionID, title, location))
+        needing.removeAll { $0.id == transactionID }
+    }
+    func markEnrichmentSkipped(transactionID: TransactionID) async throws {
+        needing.removeAll { $0.id == transactionID }
     }
     func fetchAllForCategorization() async throws -> [Transaction] { all }
+    
+    func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {}
+    func countNeedingEnrichment() async throws -> Int { needing.count }
+    func countDistinctDescriptionsNeedingEnrichment() async throws -> Int { needing.count }
+
     func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction] {
         Array(needing.prefix(limit))
     }

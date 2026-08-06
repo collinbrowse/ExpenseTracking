@@ -7,6 +7,7 @@ public struct SyncProgress: Sendable, Equatable {
         case preparing
         case downloading
         case saving
+        case backfillingHistory
         case enriching
     }
 

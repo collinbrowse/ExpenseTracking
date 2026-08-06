@@ -15,7 +15,8 @@ struct MergeEnrichmentTests {
             description: "STARBUCKS  SEATTLE WA",
             categoryID: SystemCategory.dining.id,
             enrichedTitle: "Starbucks",
-            enrichedLocation: "Seattle WA"
+            enrichedLocation: "Seattle WA",
+            titleSource: .llm
         )
         let remote = Transaction(
             id: TransactionID("1"),
@@ -29,6 +30,7 @@ struct MergeEnrichmentTests {
         let merged = MergeSyncPolicy.merge(local: local, remote: remote)
         #expect(merged.enrichedTitle == "Starbucks")
         #expect(merged.enrichedLocation == "Seattle WA")
+        #expect(merged.titleSource == .llm)
         #expect(merged.amount == -12)
     }
 

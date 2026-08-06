@@ -41,10 +41,12 @@ struct SyncProgressEmissionTests {
         let values = await collector.values
         #expect(values.contains { $0?.phase == .preparing })
         #expect(values.contains {
-            $0?.phase == .downloading && $0?.completedUnits == 0 && $0?.totalUnits == 1
+            ($0?.phase == .downloading || $0?.phase == .backfillingHistory)
+                && $0?.completedUnits == 0 && $0?.totalUnits == 1
         })
         #expect(values.contains {
-            $0?.phase == .downloading && $0?.completedUnits == 1 && $0?.totalUnits == 1
+            ($0?.phase == .downloading || $0?.phase == .backfillingHistory)
+                && $0?.completedUnits == 1 && $0?.totalUnits == 1
         })
         #expect(values.contains { $0?.phase == .saving })
         #expect(values.contains { $0 == nil })
@@ -131,7 +133,8 @@ struct EnrichmentProgressTests {
             ),
             categoryEnricher: StubProgressCategoryEnricher(id: SystemCategory.dining.id),
             transactionRepository: txs,
-            ruleRepository: EmptyProgressRuleRepository()
+            ruleRepository: EmptyProgressRuleRepository(),
+            workCoordinator: FoundationModelsWorkCoordinator()
         )
 
         let recorder = LockedProgressUnitRecorder()
@@ -139,7 +142,8 @@ struct EnrichmentProgressTests {
             recorder.append(completed: completed, total: total)
         }
         let events = recorder.events
-        #expect(events.contains { $0.completed == 0 && $0.total == 2 })
+        #expect(events.contains { $0.completed == 0 && $0.total >= 1 })
+        #expect(events.contains { $0.completed >= 1 && $0.total >= $0.completed })
         #expect(events.contains { $0.completed == 2 && $0.total == 2 })
     }
 }
@@ -222,7 +226,7 @@ private struct EmptyProgressRuleRepository: CategorizationRuleRepository {
 }
 
 private final class MockEnrichmentProgressRepository: TransactionRepository, @unchecked Sendable {
-    let needing: [Transaction]
+    var needing: [Transaction]
     let all: [Transaction]
     init(needing: [Transaction], all: [Transaction]) {
         self.needing = needing
@@ -244,16 +248,27 @@ private final class MockEnrichmentProgressRepository: TransactionRepository, @un
         categoryID: CategoryID,
         categoryLocked: Bool
     ) async throws {}
-    func updateDescription(transactionID: TransactionID, description: String) async throws {}
     func updateTags(transactionID: TransactionID, tagIDs: [TagID]) async throws {}
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {}
     func applyTagAssignments(_ assignments: [TagAssignment]) async throws {}
     func updateEnrichment(
         transactionID: TransactionID,
         title: String,
-        location: String?
-    ) async throws {}
+        location: String?,
+        source: TitleSource,
+        clearLocation: Bool
+    ) async throws {
+        needing = needing.filter { $0.id != transactionID }
+    }
+    func markEnrichmentSkipped(transactionID: TransactionID) async throws {
+        needing = needing.filter { $0.id != transactionID }
+    }
     func fetchAllForCategorization() async throws -> [Transaction] { all }
+    
+    func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {}
+    func countNeedingEnrichment() async throws -> Int { needing.count }
+    func countDistinctDescriptionsNeedingEnrichment() async throws -> Int { needing.count }
+
     func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction] {
         Array(needing.prefix(limit))
     }

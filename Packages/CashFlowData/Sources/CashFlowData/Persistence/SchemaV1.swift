@@ -1,4 +1,5 @@
 import Foundation
+import CashFlowKit
 @preconcurrency import SwiftData
 
 /// Single versioned schema.
@@ -16,6 +17,7 @@ public enum CashFlowSchemaV1: VersionedSchema {
             ConnectionEntity.self,
             CategorizationRuleEntity.self,
             TagEntity.self,
+            MerchantParseMemoEntity.self,
         ]
     }
 }
@@ -93,6 +95,8 @@ public final class TransactionEntity {
     public var enrichedTitle: String?
     /// Local-only location from on-device enrichment; sync never invents this.
     public var enrichedLocation: String?
+    /// `TitleSource.rawValue` for the enrichment fields; nil when no enrichment is present.
+    public var titleSourceRaw: String? = nil
     /// JSON-encoded `[TagID]` the user removed; rules must not re-add these.
     public var suppressedTagIDsData: Data? = nil
     /// Composite uniqueness helper: accountExternalID + transactionExternalID
@@ -120,6 +124,7 @@ public final class TransactionEntity {
         categoryLocked: Bool = false,
         enrichedTitle: String? = nil,
         enrichedLocation: String? = nil,
+        titleSourceRaw: String? = nil,
         suppressedTagIDsData: Data? = nil
     ) {
         self.id = id
@@ -137,6 +142,7 @@ public final class TransactionEntity {
         self.categoryLocked = categoryLocked
         self.enrichedTitle = enrichedTitle
         self.enrichedLocation = enrichedLocation
+        self.titleSourceRaw = titleSourceRaw
         self.suppressedTagIDsData = suppressedTagIDsData
         self.tags = []
     }
@@ -149,8 +155,15 @@ public final class ConnectionEntity {
     public var needsReauth: Bool
     public var lastSuccessfulSyncAt: Date?
     public var isDemo: Bool = false
-    /// After one successful full lookback sync, later syncs use watermark − incremental lookback.
-    /// Default on the property so lightweight migration can fill existing rows.
+    /// Oldest posted date the provider has been asked for so far; nil before the first sync.
+    public var earliestFetchedDate: Date? = nil
+    /// `HistoryLookbackYears.rawValue` the user asked us to import.
+    public var lookbackYearsRaw: Int = 2
+    /// True once the backward walk reached the target start date or the bank ran dry.
+    public var historyComplete: Bool = false
+    /// Last time the backward walk actually moved `earliestFetchedDate` older.
+    public var lastBackfillAdvanceAt: Date? = nil
+    /// Legacy flag kept for lightweight migration from stores that still have the column.
     public var historyBackfillComplete: Bool = false
 
     public init(
@@ -159,6 +172,10 @@ public final class ConnectionEntity {
         needsReauth: Bool = false,
         lastSuccessfulSyncAt: Date? = nil,
         isDemo: Bool = false,
+        earliestFetchedDate: Date? = nil,
+        lookbackYearsRaw: Int = 2,
+        historyComplete: Bool = false,
+        lastBackfillAdvanceAt: Date? = nil,
         historyBackfillComplete: Bool = false
     ) {
         self.id = id
@@ -166,7 +183,15 @@ public final class ConnectionEntity {
         self.needsReauth = needsReauth
         self.lastSuccessfulSyncAt = lastSuccessfulSyncAt
         self.isDemo = isDemo
+        self.earliestFetchedDate = earliestFetchedDate
+        self.lookbackYearsRaw = lookbackYearsRaw
+        self.historyComplete = historyComplete
+        self.lastBackfillAdvanceAt = lastBackfillAdvanceAt
         self.historyBackfillComplete = historyBackfillComplete
+    }
+
+    public var lookback: HistoryLookbackYears {
+        HistoryLookbackYears(rawValue: lookbackYearsRaw) ?? .default
     }
 }
 
@@ -180,6 +205,8 @@ public final class CategorizationRuleEntity {
     public var conditionsData: Data
     /// Optional merchant title applied when the rule matches.
     public var renameTitle: String? = nil
+    /// Optional location applied when the rule matches.
+    public var renameLocation: String? = nil
     /// When false, matching only renames / tags; category is left alone.
     public var appliesCategory: Bool = true
     /// JSON-encoded `[TagID]` added when the rule matches.
@@ -196,6 +223,7 @@ public final class CategorizationRuleEntity {
         isEnabled: Bool = true,
         conditionsData: Data,
         renameTitle: String? = nil,
+        renameLocation: String? = nil,
         appliesCategory: Bool = true,
         tagIDsData: Data? = nil,
         createdByAssistant: Bool = false,
@@ -207,6 +235,7 @@ public final class CategorizationRuleEntity {
         self.isEnabled = isEnabled
         self.conditionsData = conditionsData
         self.renameTitle = renameTitle
+        self.renameLocation = renameLocation
         self.appliesCategory = appliesCategory
         self.tagIDsData = tagIDsData
         self.createdByAssistant = createdByAssistant
@@ -226,5 +255,29 @@ public final class TagEntity {
         self.name = name
         self.createdAt = createdAt
         self.transactions = []
+    }
+}
+
+/// Memoized LLM parse keyed by normalized bank description.
+@Model
+public final class MerchantParseMemoEntity {
+    @Attribute(.unique) public var normalizedKey: String
+    public var title: String
+    public var location: String?
+    public var version: Int = 1
+    public var createdAt: Date = Date()
+
+    public init(
+        normalizedKey: String,
+        title: String,
+        location: String? = nil,
+        version: Int = 1,
+        createdAt: Date = .now
+    ) {
+        self.normalizedKey = normalizedKey
+        self.title = title
+        self.location = location
+        self.version = version
+        self.createdAt = createdAt
     }
 }

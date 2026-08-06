@@ -76,10 +76,8 @@ Code: `ExpenseTracking/Features/AppLock/`, `Features/Settings/`, `CashFlowData/S
 - `SyncCoordinator` — single-flight; cancel waits for slot; failures keep last good local data
 - Sync progress stream (`SyncProgress`): preparing → downloading (date windows) → saving → optional enriching; UI on Home / Transactions / Insights / Accounts
 - `connectionStatus` assembles Keychain/Demo + `ConnectionEntity` (`needsReauth`, last sync)
-- Initial / incomplete history: ~2-year lookback (chunked ≤90 days with ~5-day overlap for SimpleFIN) until `historyBackfillComplete`; later syncs use watermark − 30 days
-- Pending transactions are requested (`pending=1`), persisted, shown in the list, and flip to posted on the same sync key when the bank posts them; Home net still excludes pending
-- Accounts list shows per-account sync health (Sync OK vs Bridge `errlist` issue); connection-scoped and account-scoped errors attach to the matching rows
-- Merge policy: **locked** category always kept; else matching **user rule** wins (even over manual edits); else user-edited category; else remote suggestion. Account name: user-edited wins. Remote wins amount / date / description / balance / institution
+- Initial / incomplete history: configurable lookback (default 2 years), at most 8 SimpleFIN windows per sync, stops after two consecutive empty windows; resumes via watermark until `historyComplete`; later syncs use last sync − 30 days
+- Merge policy: **locked** category always kept; else matching **user rule** wins (even over manual edits); else user-edited category; else remote suggestion. Account name: user-edited wins. Remote wins amount / date / description / balance / institution. Renames write `enrichedTitle` / `enrichedLocation` (bank description stays immutable)
 - Category suggestion: user rules first, then built-in keywords (`SuggestTransactionCategoryUseCase`); unmatched credits → Other (not Income)
 - Demo provider for fixtures / portfolio; SimpleFIN for real institutions — **not coexisting in one store**
 - Widget snapshot written after successful sync; cleared on full wipe (`NetSnapshotStore`)
@@ -105,7 +103,7 @@ Code: `ExpenseTrackingWidget/`
 ### Categorization
 
 - User rules: multi-condition AND filters (title/description contains|equals, account, amount min/max) stored in SwiftData
-- Optional **rename title** action on rules (preserves location); applied with category on sync/re-apply
+- Optional **rename title / location** actions on rules; applied via enrichment (`TitleSource.rule`) on sync/re-apply
 - Apply on sync/ingest before built-in keyword suggester; create/edit/delete re-applies to all **unlocked** transactions (including prior manual edits)
 - Per-transaction **Lock category** toggle blocks rule overwrites (category and rename)
 - Built-in keyword/phrase fallback remains (`SuggestTransactionCategoryUseCase`); unmatched credits → Other (not Income)
@@ -137,12 +135,13 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 ### On-device intelligence (Foundation Models)
 
 - Apple **Foundation Models** (on-device) behind `SystemLanguageModel` availability; app targets **iOS 26+**
-- Post-sync enrichment writes local-only `enrichedTitle` / `enrichedLocation` (sync never invents these; cleared when description changes)
-- Display prefers enrichment cache, else heuristic `ParseTransactionDescriptionUseCase`
+- Post-sync enrichment writes local-only `enrichedTitle` / `enrichedLocation` (bank `description` is immutable after ingest)
+- Display prefers enrichment cache, else raw bank description (no heuristic cleanup)
 - LLM category suggestions apply only to unlocked, non-rule-matched **Other** rows (`userEditedCategory: false`); rules + keywords remain the safety net
 - **Assistant** (Transactions toolbar + Settings): interprets intent into rule conditions, shows a preview with affected count, applies on Run (optional lasting rule; Undo from Rules → Edit Rule)
 - **Rule Undo**: Edit Rule sheet can undo the last apply for assistant and user rules; later manual edits win
-- When Apple Intelligence is off / ineligible / not ready, heuristics and rules continue unchanged
+- When Apple Intelligence is off / ineligible / not ready, titles stay raw until the user renames via rules or the editor; no heuristic fallback
+- Configurable history lookback (90 days / 1 / 2 / 5 years) with quota-aware multi-day backfill; Settings shows progress and “Clean up transaction titles”
 
 Code: `CashFlowKit` ports + plan DTOs, `CashFlowData/Intelligence/`, `ExpenseTracking/Features/Assistant/`
 

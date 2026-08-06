@@ -1,7 +1,6 @@
 import Foundation
 
-/// Merchant title + optional location parsed from a bank/SimpleFIN description.
-/// Banks often pad with spaces or append `"CITY ST"` / `"CITY, ST"` at the end.
+/// Merchant title + optional location from bank description enrichment or user/rule authorship.
 public struct ParsedTransactionDescription: Equatable, Sendable {
     public let title: String
     public let location: String?
@@ -12,26 +11,10 @@ public struct ParsedTransactionDescription: Equatable, Sendable {
         self.location = location
         self.raw = raw
     }
-
-    /// Rebuilds a storable description so location survives a title-only edit.
-    public static func recombine(title: String, location: String?) -> String {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let location,
-              !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-            return trimmedTitle
-        }
-        let trimmedLocation = collapseWhitespace(location)
-        return "\(trimmedTitle)  \(trimmedLocation)"
-    }
-
-    fileprivate static func collapseWhitespace(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-    }
 }
 
+/// Legacy heuristic splitter retained for tests that document bank padding patterns.
+/// Product paths must not call this — display and enrichment use LLM or raw description.
 public enum ParseTransactionDescriptionUseCase: Sendable {
     public static func execute(_ raw: String) -> ParsedTransactionDescription {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -50,7 +33,7 @@ public enum ParseTransactionDescriptionUseCase: Sendable {
             )
         }
 
-        let collapsed = ParsedTransactionDescription.collapseWhitespace(trimmed)
+        let collapsed = collapseWhitespace(trimmed)
         return ParsedTransactionDescription(title: collapsed, location: nil, raw: trimmed)
     }
 
@@ -63,15 +46,13 @@ public enum ParseTransactionDescriptionUseCase: Sendable {
 
         let title = String(trimmed[..<match.lowerBound])
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let tail = ParsedTransactionDescription.collapseWhitespace(
-            String(trimmed[match.upperBound...])
-        )
+        let tail = collapseWhitespace(String(trimmed[match.upperBound...]))
         guard !title.isEmpty, !tail.isEmpty else { return nil }
 
         if let cityState = extractTrailingCityState(tail, preferWholeTailAsLocation: true) {
             let merchant = cityState.prefix.isEmpty
                 ? title
-                : ParsedTransactionDescription.collapseWhitespace("\(title) \(cityState.prefix)")
+                : collapseWhitespace("\(title) \(cityState.prefix)")
             return ParsedTransactionDescription(
                 title: merchant,
                 location: cityState.location,
@@ -96,7 +77,7 @@ public enum ParseTransactionDescriptionUseCase: Sendable {
         _ text: String,
         preferWholeTailAsLocation: Bool = false
     ) -> CityStateSplit? {
-        let collapsed = ParsedTransactionDescription.collapseWhitespace(text)
+        let collapsed = collapseWhitespace(text)
         var tokens = collapsed.split(separator: " ").map(String.init)
         guard tokens.count >= 2 else { return nil }
 
@@ -155,7 +136,6 @@ public enum ParseTransactionDescriptionUseCase: Sendable {
             .max(by: { $0.cityWordCount < $1.cityWordCount })
     }
 
-    /// Higher is better. Multi-word cities (Fort Collins, San Diego) beat a 1-word split.
     private static func locationRank(_ split: CityStateSplit) -> Int {
         if split.cityWordCount >= 2, multiWordCityStarters.contains(split.cityLeadToken) {
             return 100 + split.cityWordCount
@@ -163,7 +143,6 @@ public enum ParseTransactionDescriptionUseCase: Sendable {
         if split.cityWordCount == 3, multiWordCityStarters.contains(split.cityLeadToken) {
             return 110
         }
-        // Default: prefer a single city token (Durango CO over "X Durango CO" as city).
         return 20 - split.cityWordCount
     }
 
@@ -195,6 +174,12 @@ public enum ParseTransactionDescriptionUseCase: Sendable {
         return true
     }
 
+    private static func collapseWhitespace(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
     private static let usStateCodes: Set<String> = [
         "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
         "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
@@ -210,7 +195,6 @@ public enum ParseTransactionDescriptionUseCase: Sendable {
         "OKLAHOMA", "OVERLAND", "PALM", "PARK", "SIOUX", "STATE", "VIRGINIA", "WEST",
     ]
 
-    /// Tokens that often precede "CO" (company) or otherwise aren't place names.
     private static let cityTokenBlocklist: Set<String> = [
         "EXPRESS", "ELECTRIC", "COMPANY", "COMPANIES", "SERVICES", "SERVICE",
         "FINANCIAL", "BANKING", "HOLDINGS", "GROUP", "INTERNATIONAL",

@@ -89,20 +89,47 @@ public actor CompositeBankLinkingService: BankLinkingServing {
         endDate: Date?,
         onWindowProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?
     ) async throws -> RemoteSyncPayload {
+        try await fetchAccountsWindowed(
+            startDate: startDate,
+            endDate: endDate,
+            maxWindows: nil,
+            stopAfterConsecutiveEmpty: nil,
+            onWindowProgress: onWindowProgress
+        ).payload
+    }
+
+    public func fetchAccountsWindowed(
+        startDate: Date?,
+        endDate: Date?,
+        maxWindows: Int?,
+        stopAfterConsecutiveEmpty: Int?,
+        onWindowProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?
+    ) async throws -> SimpleFINClient.WindowedFetchResult {
         await resolveModeIfNeeded()
         switch mode {
         case .none:
             throw CashFlowError.notLinked
         case .demo:
-            return try await demo.fetchAccounts(
+            let payload = try await demo.fetchAccounts(
                 startDate: startDate,
                 endDate: endDate,
                 onWindowProgress: onWindowProgress
             )
+            let end = endDate ?? .now
+            let start = startDate ?? end
+            return SimpleFINClient.WindowedFetchResult(
+                payload: payload,
+                windowsCompleted: 1,
+                consecutiveEmptyTrailing: 0,
+                fetchedStart: start,
+                fetchedEnd: end
+            )
         case .simpleFIN:
-            return try await simpleFIN.fetchAccounts(
+            return try await simpleFIN.fetchAccountsWindowed(
                 startDate: startDate,
                 endDate: endDate,
+                maxWindows: maxWindows,
+                stopAfterConsecutiveEmpty: stopAfterConsecutiveEmpty,
                 onWindowProgress: onWindowProgress
             )
         }

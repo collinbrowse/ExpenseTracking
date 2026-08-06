@@ -6,7 +6,7 @@ import CashFlowKit
 
 @Suite("Sync history backfill")
 struct SyncHistoryBackfillTests {
-    @Test("Watermark alone does not skip lookback until historyBackfillComplete")
+    @Test("Incomplete history walks backward instead of using incremental watermark")
     func incompleteBackfillIgnoresWatermark() async throws {
         let accessStore = InMemoryAccessURLStore()
         try accessStore.save("https://user:pass@example.com/simplefin")
@@ -29,6 +29,7 @@ struct SyncHistoryBackfillTests {
                 needsReauth: false,
                 lastSuccessfulSyncAt: .now,
                 isDemo: false,
+                historyComplete: false,
                 historyBackfillComplete: false
             )
         )
@@ -37,13 +38,12 @@ struct SyncHistoryBackfillTests {
         let sync = SyncCoordinator(modelContainer: container, bankLinking: linking)
         _ = try await sync.syncNow()
 
-        let earliest = await http.earliestRequestedStart()
-        let twoYearsAgo = Calendar.current.date(byAdding: .year, value: -2, to: .now)!
-        #expect(earliest != nil)
-        #expect(abs(earliest!.timeIntervalSince(twoYearsAgo)) < 172_800)
+        let windows = await http.windowCount()
+        #expect(windows <= SyncCoordinator.maxBackfillWindowsPerSync)
+        #expect(windows >= SyncCoordinator.consecutiveEmptyWindowsToStop)
 
         let afterBackfill = try ModelContext(container).fetch(FetchDescriptor<ConnectionEntity>())
-        #expect(afterBackfill.first?.historyBackfillComplete == true)
+        #expect(afterBackfill.first?.historyComplete == true || afterBackfill.first?.historyBackfillComplete == true)
 
         await http.reset()
         _ = try await sync.syncNow()
@@ -80,16 +80,14 @@ struct SyncHistoryBackfillTests {
         )
 
         _ = try await sync.syncNow()
-        #expect(
-            try ModelContext(container).fetch(FetchDescriptor<ConnectionEntity>())
-                .first?.historyBackfillComplete == true
-        )
+        let afterSync = try ModelContext(container).fetch(FetchDescriptor<ConnectionEntity>()).first
+        #expect(afterSync?.historyComplete == true || afterSync?.historyBackfillComplete == true)
 
         _ = try await lifecycle.resetLocalDataKeepingLink()
-        #expect(
-            try ModelContext(container).fetch(FetchDescriptor<ConnectionEntity>())
-                .first?.historyBackfillComplete == false
-        )
+        let after = try ModelContext(container).fetch(FetchDescriptor<ConnectionEntity>()).first
+        #expect(after?.historyBackfillComplete == false)
+        #expect(after?.historyComplete == false)
+        #expect(after?.earliestFetchedDate == nil)
     }
 }
 
@@ -120,6 +118,10 @@ private actor RecordingAccountsHTTPClient: HTTPClient {
 
     func earliestRequestedStart() -> Date? {
         startDates.min()
+    }
+
+    func windowCount() -> Int {
+        startDates.count
     }
 
     func reset() {

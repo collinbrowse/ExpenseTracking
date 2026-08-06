@@ -3,7 +3,7 @@ import Foundation
 /// Shared normalize / token / phrase matching for built-in suggestions and user rules.
 public enum TransactionDescriptionMatcher: Sendable {
     public static func normalize(_ description: String) -> String {
-        description
+        let replaced = description
             .lowercased()
             .replacingOccurrences(of: "*", with: " ")
             .replacingOccurrences(of: "/", with: " ")
@@ -11,6 +11,9 @@ public enum TransactionDescriptionMatcher: Sendable {
             .replacingOccurrences(of: ".", with: " ")
             .replacingOccurrences(of: ",", with: " ")
             .replacingOccurrences(of: "#", with: " ")
+        return replaced
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
     }
 
     public static func tokens(in haystack: String) -> [String] {

@@ -15,7 +15,9 @@ struct RuleUndoTests {
             categoryID: SystemCategory.other.id,
             userEditedCategory: false,
             tagIDs: [],
-            description: "CAFE BANGKOK"
+            enrichedTitle: nil,
+            enrichedLocation: nil,
+            titleSource: nil
         )
         let snapshot = CategorizationRuleApplySnapshot(
             appliesCategory: true,
@@ -53,7 +55,9 @@ struct RuleUndoTests {
             categoryID: SystemCategory.other.id,
             userEditedCategory: false,
             tagIDs: [],
-            description: "CAFE"
+            enrichedTitle: nil,
+            enrichedLocation: nil,
+            titleSource: nil
         )
         let snapshot = CategorizationRuleApplySnapshot(
             appliesCategory: true,
@@ -87,7 +91,9 @@ struct RuleUndoTests {
             categoryID: SystemCategory.other.id,
             userEditedCategory: false,
             tagIDs: [personal],
-            description: "CAFE"
+            enrichedTitle: nil,
+            enrichedLocation: nil,
+            titleSource: nil
         )
         let snapshot = CategorizationRuleApplySnapshot(
             appliesCategory: false,
@@ -96,7 +102,6 @@ struct RuleUndoTests {
             renameTitle: nil,
             priors: [prior]
         )
-        // User removed trip and kept personal (plus maybe nothing else).
         let current = Transaction(
             id: TransactionID("1"),
             accountID: account,
@@ -114,6 +119,48 @@ struct RuleUndoTests {
             currentByID: [current.id: current]
         )
         #expect(restorations.tagAssignments.isEmpty)
+    }
+
+    @Test("Restores prior enrichment when undoing a rename rule")
+    func restoresRenameEnrichment() {
+        let prior = CategorizationRuleTransactionPrior(
+            transactionID: TransactionID("1"),
+            categoryID: SystemCategory.dining.id,
+            userEditedCategory: true,
+            tagIDs: [],
+            enrichedTitle: "Cafe",
+            enrichedLocation: "Bangkok",
+            titleSource: .llm
+        )
+        let snapshot = CategorizationRuleApplySnapshot(
+            appliesCategory: false,
+            categoryID: SystemCategory.dining.id,
+            tagIDs: [],
+            renameTitle: "Coffee Shop",
+            renameLocation: "Thailand",
+            priors: [prior]
+        )
+        let current = Transaction(
+            id: TransactionID("1"),
+            accountID: account,
+            externalID: "e1",
+            amount: -12,
+            postedDate: .now,
+            description: "CAFE BANGKOK TH",
+            categoryID: SystemCategory.dining.id,
+            enrichedTitle: "Coffee Shop",
+            enrichedLocation: "Thailand",
+            titleSource: .rule
+        )
+
+        let restorations = UndoCategorizationRuleUseCase.restorations(
+            snapshot: snapshot,
+            currentByID: [current.id: current]
+        )
+        #expect(restorations.titleLocationAssignments.count == 1)
+        #expect(restorations.titleLocationAssignments[0].title == "Cafe")
+        #expect(restorations.titleLocationAssignments[0].location == "Bangkok")
+        #expect(restorations.titleLocationAssignments[0].titleSource == .llm)
     }
 
     @Test("priorsToCapture skips transactions the rule would not change")
