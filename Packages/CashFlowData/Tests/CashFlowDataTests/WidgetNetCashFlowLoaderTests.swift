@@ -174,14 +174,18 @@ struct WidgetNetCashFlowLoaderTests {
         #expect(totals?.rangeLabel == "This Month")
     }
 
-    @Test("Unavailable App Group returns nil for default loader")
-    func unavailableAppGroup() async {
-        // Fake group IDs must not fall back to this process's Application Support.
-        let loader = WidgetNetCashFlowLoader(
-            appGroupID: "group.com.expensetracking.unavailable-ci"
-        )
+    @Test("Empty App Group id returns nil for default loader")
+    func emptyAppGroupID() async {
+        // `containerURL` is nil for an empty identifier; do not open a local fallback store.
+        let loader = WidgetNetCashFlowLoader(appGroupID: "")
         let totals = await loader.load(timeFrame: .thisMonth)
         #expect(totals == nil)
+    }
+
+    @Test("makeSharedStoreIfAvailable returns nil when the group is unavailable")
+    func sharedStoreNilWhenUnavailable() {
+        #expect(ModelContainerFactory.makeSharedStoreIfAvailable(appGroupID: "") == nil)
+        #expect(ModelContainerFactory.isAppGroupAvailable("") == false)
     }
 
     private func insertTx(
