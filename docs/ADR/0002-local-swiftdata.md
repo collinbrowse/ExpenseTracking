@@ -10,7 +10,7 @@ Personal MVP; no multi-device sync; delete-app may wipe data.
 
 ## Decision
 
-SwiftData is the source of truth on device. Schema uses `VersionedSchema` v1 + `SchemaMigrationPlan`. Widget snapshot written to App Group JSON (`NetSnapshotStore`) after sync, with Application Support fallback when the App Group container is unavailable.
+SwiftData is the source of truth on device. Schema uses `VersionedSchema` v1 + `SchemaMigrationPlan`. The home-screen widget reads the shared App Group SwiftData store live (`WidgetNetCashFlowLoader`) for its configured time frame; leftover `NetSnapshotStore` JSON is cleared on full wipe.
 
 ## Consequences
 

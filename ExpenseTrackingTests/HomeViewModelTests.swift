@@ -32,16 +32,64 @@ struct HomeViewModelTests {
             ]
         )
         let sync = MockSyncServing()
+        let reloader = RecordingWidgetTimelineReloader()
         let vm = HomeViewModel(
             transactionRepository: repo,
             syncServing: sync,
             calculateNetCashFlow: CalculateNetCashFlowUseCase(),
-            connectivity: ConnectivityMonitor()
+            connectivity: ConnectivityMonitor(),
+            widgetTimelineReloader: reloader
         )
         await vm.reload()
         #expect(vm.result.net == 900)
         #expect(vm.hasData)
         #expect(!vm.availableRangeOptions.contains(.lastYear))
+        #expect(reloader.reloadCount == 1)
+    }
+
+    @Test("Successful Home reload reloads widget even when Home range is not the widget range")
+    func reloadAlwaysInvalidatesWidget() async {
+        let now = Date()
+        let repo = MockTransactionRepository(
+            transactions: [
+                Transaction(
+                    id: TransactionID("1"),
+                    accountID: AccountID("a"),
+                    externalID: "1",
+                    amount: -40,
+                    postedDate: now,
+                    description: "Spend",
+                    categoryID: SystemCategory.dining.id
+                ),
+            ]
+        )
+        let reloader = RecordingWidgetTimelineReloader()
+        let vm = HomeViewModel(
+            transactionRepository: repo,
+            syncServing: MockSyncServing(),
+            calculateNetCashFlow: CalculateNetCashFlowUseCase(),
+            connectivity: ConnectivityMonitor(),
+            widgetTimelineReloader: reloader
+        )
+        vm.selectedOption = .last30Days
+        await vm.reload()
+        #expect(vm.selectedOption == .last30Days)
+        #expect(reloader.reloadCount == 1)
+    }
+
+    @Test("Failed Home reload does not reload the widget")
+    func failedReloadSkipsWidget() async {
+        let reloader = RecordingWidgetTimelineReloader()
+        let vm = HomeViewModel(
+            transactionRepository: FailingTransactionRepository(),
+            syncServing: MockSyncServing(),
+            calculateNetCashFlow: CalculateNetCashFlowUseCase(),
+            connectivity: ConnectivityMonitor(),
+            widgetTimelineReloader: reloader
+        )
+        await vm.reload()
+        #expect(vm.bannerMessage != nil)
+        #expect(reloader.reloadCount == 0)
     }
 
     @Test("Year appears only when local history reaches back a full year")
@@ -193,4 +241,46 @@ private struct MockSyncServing: SyncServing {
     func connectionStatus() async -> LinkedConnection {
         LinkedConnection(isLinked: true, providerName: "Mock")
     }
+}
+
+private struct FailingTransactionRepository: TransactionRepository {
+    func fetchPage(
+        filter: TransactionFilter,
+        cursor: TransactionCursor?,
+        limit: Int
+    ) async throws -> TransactionPage {
+        throw CashFlowError.persistence(message: "boom")
+    }
+
+    func fetchPosted(in range: CashFlowDateRange, now: Date) async throws -> [Transaction] {
+        throw CashFlowError.persistence(message: "boom")
+    }
+
+    func earliestPostedDate() async throws -> Date? {
+        throw CashFlowError.persistence(message: "boom")
+    }
+
+    func updateCategory(
+        transactionID: TransactionID,
+        categoryID: CategoryID,
+        categoryLocked: Bool
+    ) async throws {}
+    func updateTags(transactionID: TransactionID, tagIDs: [TagID]) async throws {}
+    func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {}
+    func applyTagAssignments(_ assignments: [TagAssignment]) async throws {}
+    func updateEnrichment(
+        transactionID: TransactionID,
+        title: String,
+        location: String?,
+        source: TitleSource,
+        clearLocation: Bool
+    ) async throws {}
+    func markEnrichmentSkipped(transactionID: TransactionID) async throws {}
+    func fetchAllForCategorization() async throws -> [Transaction] { [] }
+    func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction] { [] }
+    func countNeedingCategorySuggestion() async throws -> Int { 0 }
+    func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {}
+    func countNeedingEnrichment() async throws -> Int { 0 }
+    func countDistinctDescriptionsNeedingEnrichment() async throws -> Int { 0 }
+    func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction] { [] }
 }

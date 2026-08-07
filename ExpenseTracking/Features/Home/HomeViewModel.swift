@@ -16,6 +16,7 @@ final class HomeViewModel {
     private let syncServing: any SyncServing
     private let calculateNetCashFlow: CalculateNetCashFlowUseCase
     private let connectivity: ConnectivityMonitor
+    private let widgetTimelineReloader: any WidgetTimelineReloading
 
     var selectedOption: HomeRangeOption = .month
     var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .now
@@ -51,12 +52,14 @@ final class HomeViewModel {
         transactionRepository: any TransactionRepository,
         syncServing: any SyncServing,
         calculateNetCashFlow: CalculateNetCashFlowUseCase,
-        connectivity: ConnectivityMonitor
+        connectivity: ConnectivityMonitor,
+        widgetTimelineReloader: any WidgetTimelineReloading = NoOpWidgetTimelineReloader()
     ) {
         self.transactionRepository = transactionRepository
         self.syncServing = syncServing
         self.calculateNetCashFlow = calculateNetCashFlow
         self.connectivity = connectivity
+        self.widgetTimelineReloader = widgetTimelineReloader
     }
 
     var selectedRange: CashFlowDateRange {
@@ -155,6 +158,8 @@ final class HomeViewModel {
             if nextHasData && (wasUnlinkedEmpty || shouldShowLoader) {
                 chartAnimationToken += 1
             }
+            // Invalidate widget timelines so each instance recomputes its own configured range.
+            widgetTimelineReloader.reloadCashFlowWidget()
         } catch is CancellationError {
             return
         } catch {

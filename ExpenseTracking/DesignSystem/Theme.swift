@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CashFlowKit
 
 enum Theme {
     /// Accessible green for income / positive net (tuned for light & dark).
@@ -96,14 +97,11 @@ struct ChartSelectionCallout: View {
 
 enum CurrencyFormatting {
     static func usd(_ amount: Decimal) -> String {
-        amount.formatted(.currency(code: "USD"))
+        CashFlowCurrencyFormatting.usd(amount)
     }
 
     static func signedUSD(_ amount: Decimal) -> String {
-        let formatted = usd(abs(amount))
-        if amount > 0 { return "+\(formatted)" }
-        if amount < 0 { return "−\(formatted)" }
-        return formatted
+        CashFlowCurrencyFormatting.signedUSD(amount)
     }
 }
 

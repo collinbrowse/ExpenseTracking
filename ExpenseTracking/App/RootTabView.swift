@@ -21,7 +21,8 @@ struct RootTabView: View {
                 transactionRepository: container.transactionRepository,
                 syncServing: container.syncServing,
                 calculateNetCashFlow: container.calculateNetCashFlow,
-                connectivity: container.connectivity
+                connectivity: container.connectivity,
+                widgetTimelineReloader: WidgetKitTimelineReloader()
             )
         )
         _transactionsViewModel = State(
