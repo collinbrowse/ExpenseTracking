@@ -71,6 +71,20 @@ enum Theme {
         }
         return Int(hash % UInt64(chartPalette.count))
     }
+
+    /// Readable label color on a filled chart/tag background.
+    static func contrastingLabel(on background: Color) -> Color {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard UIColor(background).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return .white
+        }
+        // Relative luminance (sRGB).
+        let luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+        return luminance > 0.62 ? Color.black.opacity(0.88) : Color.white
+    }
 }
 
 struct ChartSelectionCallout: View {

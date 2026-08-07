@@ -100,13 +100,13 @@ struct NetCashFlowChartView: View {
                 }
 
                 if let selectedPoint {
-                    RuleMark(x: .value("Selected", selectedPoint.day, unit: .day))
+                    RuleMark(x: .value("Selected", selectedPoint.day))
                         .foregroundStyle(Color.secondary.opacity(0.45))
                         .lineStyle(StrokeStyle(lineWidth: 1))
                         .zIndex(-1)
 
                     PointMark(
-                        x: .value("Selected", selectedPoint.day, unit: .day),
+                        x: .value("Selected", selectedPoint.day),
                         y: .value("Net", doubleValue(selectedPoint.net))
                     )
                     .symbol {

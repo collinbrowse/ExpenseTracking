@@ -3,11 +3,12 @@ import Charts
 import CashFlowKit
 
 /// Interactive spending pie chart with press-and-drag angle selection.
-/// Dollar amounts appear in a callout while scrubbing; legend lives below in InsightsView.
+/// Selection stays pinned after finger lift; dollar amounts show in the callout.
 struct SpendingBreakdownChartView: View {
     let rows: [InsightsSliceRow]
+    @Binding var selectedRowID: String?
 
-    @State private var selectedAngle: Double?
+    @State private var gestureAngle: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var rowIDs: [String] {
@@ -15,15 +16,11 @@ struct SpendingBreakdownChartView: View {
     }
 
     private var selectedRow: InsightsSliceRow? {
-        guard let selectedAngle else { return nil }
-        var cumulative: Double = 0
-        for row in rows {
-            cumulative += doubleValue(row.total)
-            if selectedAngle <= cumulative {
-                return row
-            }
+        if let gestureAngle, let fromGesture = row(forAngle: gestureAngle) {
+            return fromGesture
         }
-        return rows.last
+        guard let selectedRowID else { return nil }
+        return rows.first { $0.id == selectedRowID }
     }
 
     var body: some View {
@@ -52,15 +49,23 @@ struct SpendingBreakdownChartView: View {
                 .accessibilityLabel(row.name)
                 .accessibilityValue(row.amountText)
             }
-            .chartAngleSelection(value: $selectedAngle)
+            .chartAngleSelection(value: $gestureAngle)
             .chartLegend(.hidden)
             .frame(height: 240)
+            .onChange(of: gestureAngle) { _, newValue in
+                guard let newValue, let row = row(forAngle: newValue) else { return }
+                // Pin on every live angle update so selection survives finger lift
+                // (Charts clears gestureAngle when the gesture ends).
+                if selectedRowID != row.id {
+                    selectedRowID = row.id
+                }
+            }
             .sensoryFeedback(.selection, trigger: selectedRow?.id) { old, new in
                 !reduceMotion && old != new && new != nil
             }
         }
         .accessibilityIdentifier("insights.chart")
-        .accessibilityLabel("Spending breakdown pie chart. Press and drag around the chart to inspect category amounts.")
+        .accessibilityLabel("Spending breakdown pie chart. Tap or press and drag to inspect category amounts.")
         .accessibilityValue(selectionAccessibilityValue)
     }
 
@@ -71,12 +76,23 @@ struct SpendingBreakdownChartView: View {
         return "\(selectedRow.name), \(selectedRow.amountText)"
     }
 
+    private func row(forAngle angle: Double) -> InsightsSliceRow? {
+        var cumulative: Double = 0
+        for row in rows {
+            cumulative += doubleValue(row.total)
+            if angle <= cumulative {
+                return row
+            }
+        }
+        return rows.last
+    }
+
     private func doubleValue(_ value: Decimal) -> Double {
         NSDecimalNumber(decimal: value).doubleValue
     }
 }
 
-/// Callout shown while scrubbing a pie sector (name + dollar amount).
+/// Callout shown for the pinned / scrubbed pie sector (name + dollar amount).
 struct SpendingSliceCallout: View {
     let name: String
     let amountText: String
@@ -117,5 +133,79 @@ struct SpendingSliceCallout: View {
         )
         .compositingGroup()
         .colorScheme(colorScheme)
+    }
+}
+
+/// Retail-style hang tag used as a compact category/tag legend chip.
+struct SaleTagChip: View {
+    let title: String
+    let percentText: String
+    let color: Color
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color.white.opacity(0.92))
+                .frame(width: 7, height: 7)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(percentText)
+                    .font(.caption2.weight(.medium).monospacedDigit())
+            }
+            .foregroundStyle(Theme.contrastingLabel(on: color))
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 12)
+        .padding(.vertical, 8)
+        .background(color, in: SaleTagShape())
+        .overlay(
+            SaleTagShape()
+                .strokeBorder(Color.primary.opacity(isSelected ? 0.45 : 0.12), lineWidth: isSelected ? 2 : 1)
+        )
+        .shadow(color: .black.opacity(isSelected ? 0.22 : 0.08), radius: isSelected ? 4 : 2, y: 1)
+        .opacity(isSelected ? 1 : 0.92)
+        .scaleEffect(isSelected ? 1.04 : 1)
+        .animation(.easeOut(duration: 0.15), value: isSelected)
+    }
+}
+
+/// Price-tag silhouette: pointed leading edge + rounded trailing corners.
+struct SaleTagShape: InsettableShape {
+    var insetAmount: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        let r = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        let tipWidth = min(r.height * 0.42, r.width * 0.28)
+        let corner = min(8, r.height / 2)
+
+        var path = Path()
+        path.move(to: CGPoint(x: r.minX + tipWidth, y: r.minY))
+        path.addLine(to: CGPoint(x: r.maxX - corner, y: r.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: r.maxX, y: r.minY + corner),
+            control: CGPoint(x: r.maxX, y: r.minY)
+        )
+        path.addLine(to: CGPoint(x: r.maxX, y: r.maxY - corner))
+        path.addQuadCurve(
+            to: CGPoint(x: r.maxX - corner, y: r.maxY),
+            control: CGPoint(x: r.maxX, y: r.maxY)
+        )
+        path.addLine(to: CGPoint(x: r.minX + tipWidth, y: r.maxY))
+        path.addLine(to: CGPoint(x: r.minX, y: r.midY))
+        path.closeSubpath()
+        return path
+    }
+
+    func inset(by amount: CGFloat) -> SaleTagShape {
+        SaleTagShape(insetAmount: insetAmount + amount)
     }
 }

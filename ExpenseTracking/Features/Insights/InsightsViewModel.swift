@@ -47,10 +47,6 @@ final class InsightsViewModel {
     var expenseTotalText = CurrencyFormatting.usd(0)
     var hasExpenseData = false
 
-    /// AND-scoped Insights filters (tap a slice to pin it).
-    var focusCategoryID: CategoryID?
-    var focusTagID: TagID?
-
     var tags: [CashFlowKit.Tag] = []
     var showManageTags = false
     var newTagName = ""
@@ -62,8 +58,6 @@ final class InsightsViewModel {
 
     private var reloadTask: Task<Void, Never>?
     private var reloadGeneration = 0
-    /// Last fetched posted transactions for the selected range (reused when toggling scope).
-    private var cachedTransactions: [Transaction] = []
     private var syncProgressTask: Task<Void, Never>?
 
     init(
@@ -82,36 +76,9 @@ final class InsightsViewModel {
         selectedOption.dateRange(customStart: customStart, customEnd: customEnd)
     }
 
-    var breakdownScope: SpendingBreakdownScope {
-        SpendingBreakdownScope(categoryID: focusCategoryID, tagID: focusTagID)
-    }
+    var categorySectionTitle: String { "By category" }
 
-    var hasFocusFilters: Bool {
-        breakdownScope.isFiltered
-    }
-
-    var focusCategoryName: String? {
-        focusCategoryID.map { SystemCategory.category(for: $0).name }
-    }
-
-    var focusTagName: String? {
-        guard let focusTagID else { return nil }
-        return tags.first(where: { $0.id == focusTagID })?.name
-    }
-
-    var categorySectionTitle: String {
-        if let focusTagName {
-            return "By category in \(focusTagName)"
-        }
-        return "By category"
-    }
-
-    var tagSectionTitle: String {
-        if let focusCategoryName {
-            return "By tag in \(focusCategoryName)"
-        }
-        return "By tag"
-    }
+    var tagSectionTitle: String { "By tag" }
 
     func onAppear() async {
         startObservingSyncProgress()
@@ -126,40 +93,6 @@ final class InsightsViewModel {
                 syncProgress = progress
             }
         }
-    }
-
-    func toggleCategoryFocus(_ categoryID: CategoryID) {
-        if focusCategoryID == categoryID {
-            focusCategoryID = nil
-        } else {
-            focusCategoryID = categoryID
-        }
-        applyScopeToCachedTransactions()
-    }
-
-    func toggleTagFocus(_ tagID: TagID) {
-        if focusTagID == tagID {
-            focusTagID = nil
-        } else {
-            focusTagID = tagID
-        }
-        applyScopeToCachedTransactions()
-    }
-
-    func clearCategoryFocus() {
-        focusCategoryID = nil
-        applyScopeToCachedTransactions()
-    }
-
-    func clearTagFocus() {
-        focusTagID = nil
-        applyScopeToCachedTransactions()
-    }
-
-    func clearAllFocus() {
-        focusCategoryID = nil
-        focusTagID = nil
-        applyScopeToCachedTransactions()
     }
 
     /// Updates the segmented control synchronously, then reloads (cancelling any in-flight range load).
@@ -218,16 +151,7 @@ final class InsightsViewModel {
 
             tags = fetchedTags
             cachedTransactions = transactions
-            // Drop focus on a tag that no longer exists.
-            if let focusTagID, !fetchedTags.contains(where: { $0.id == focusTagID }) {
-                self.focusTagID = nil
-            }
-            applyBreakdown(
-                transactions: transactions,
-                tags: fetchedTags,
-                range: range,
-                scope: breakdownScope
-            )
+            applyBreakdown(transactions: transactions, tags: fetchedTags, range: range)
             bannerMessage = nil
         } catch is CancellationError {
             return
@@ -240,26 +164,16 @@ final class InsightsViewModel {
         }
     }
 
-    private func applyScopeToCachedTransactions() {
-        applyBreakdown(
-            transactions: cachedTransactions,
-            tags: tags,
-            range: selectedRange,
-            scope: breakdownScope
-        )
-    }
-
     private func applyBreakdown(
         transactions: [Transaction],
         tags: [CashFlowKit.Tag],
-        range: CashFlowDateRange,
-        scope: SpendingBreakdownScope
+        range: CashFlowDateRange
     ) {
         let result = calculateSpendingBreakdown.execute(
             transactions: transactions,
             tags: tags,
             range: range,
-            scope: scope
+            scope: .all
         )
         categoryRows = result.byCategory.map {
             InsightsSliceRow(slice: $0, expenseTotal: result.expenseTotal)
@@ -359,16 +273,6 @@ final class InsightsViewModel {
         newTagName = ""
         renamingTagID = nil
         renameDraft = ""
-    }
-
-    /// Date filter option matching the Insights range for drill-down into Transactions.
-    var drillDownDateOption: TransactionDateFilterOption {
-        switch selectedOption {
-        case .month: .month
-        case .last30Days: .last30Days
-        case .lastYear: .lastYear
-        case .custom: .custom
-        }
     }
 
     private func reloadTagsAndBreakdown() async {
