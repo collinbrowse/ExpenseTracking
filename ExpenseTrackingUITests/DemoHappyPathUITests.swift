@@ -22,36 +22,43 @@ final class DemoHappyPathUITests: XCTestCase {
         )
         demoButton.tap()
 
-        // loadDemo is async (wipe + sync); wait until the sheet finishes and dismisses.
-        XCTAssertTrue(
-            demoButton.waitForNonExistence(timeout: 90),
-            "Onboarding should dismiss after Demo finishes loading"
-        )
-
-        // Post-sync cleanup prompt can cover Home on CI; dismiss if present.
+        // Do not wait for the Demo button to vanish: it stays in the hierarchy while
+        // disabled during loadDemo. Wait for Home (or enrichment prompt) instead.
+        let net = app.descendants(matching: .any)["home.net"]
         let notNow = app.buttons["enrichment.notNow"]
-        if notNow.waitForExistence(timeout: 8) {
-            notNow.tap()
-        } else {
-            let labeledNotNow = app.buttons["Not Now"]
-            if labeledNotNow.waitForExistence(timeout: 2) {
-                labeledNotNow.tap()
+        let labeledNotNow = app.buttons["Not Now"]
+        let deadline = Date().addingTimeInterval(60)
+        var sawHomeOrPrompt = false
+        while Date() < deadline {
+            if notNow.exists {
+                notNow.tap()
+                sawHomeOrPrompt = true
+                break
             }
+            if labeledNotNow.exists {
+                labeledNotNow.tap()
+                sawHomeOrPrompt = true
+                break
+            }
+            if net.exists {
+                sawHomeOrPrompt = true
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         }
+        XCTAssertTrue(sawHomeOrPrompt, "Demo load should reveal Home or enrichment prompt")
 
-        // Ensure Home is the visible tab (sheet dismissal can leave focus elsewhere).
         let homeTab = app.tabBars.buttons["Home"]
         if homeTab.waitForExistence(timeout: 5) {
             homeTab.tap()
         }
 
-        let net = app.descendants(matching: .any)["home.net"]
         let loading = app.descendants(matching: .any)["home.loading"]
         if loading.waitForExistence(timeout: 3) {
-            _ = loading.waitForNonExistence(timeout: 45)
+            _ = loading.waitForNonExistence(timeout: 30)
         }
         XCTAssertTrue(
-            net.waitForExistence(timeout: 45),
+            net.waitForExistence(timeout: 30),
             "Home net should appear after Demo load"
         )
 

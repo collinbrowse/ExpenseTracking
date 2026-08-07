@@ -8,27 +8,25 @@ struct ExpenseTrackingApp: App {
 
     init() {
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("-uiTesting") {
+        let uiTesting = arguments.contains("-uiTesting")
+        if uiTesting {
             Self.prepareForUITesting()
         }
         let largeSeed = arguments.contains("-largeDemoSeed")
         // Resilient SwiftData bootstrap — never crash launch on store migration.
-        container = DependencyContainer(largeDemoSeed: largeSeed)
+        container = DependencyContainer(largeDemoSeed: largeSeed, uiTesting: uiTesting)
+        guard !uiTesting else { return }
         // BGProcessingTask handlers must register before launch finishes.
         container.backgroundEnrichment.registerHandlers()
         container.backgroundEnrichment.scheduleUnattendedContinuation()
     }
 
-    /// Deterministic UITest launch: empty store, no onboarding flag, no lock, no link secrets.
+    /// Deterministic UITest launch: onboarding reset, no lock, no link secrets.
+    /// Store wipe is unnecessary — `DependencyContainer(uiTesting:)` uses in-memory SwiftData.
     private static func prepareForUITesting() {
         UserDefaults.standard.removeObject(forKey: "didCompleteOnboarding")
         UserDefaults.standard.set(false, forKey: "appLockEnabled")
-        ModelContainerFactory.destroyPersistentStores(
-            appGroupID: NetSnapshotStore.defaultAppGroupID
-        )
-        ModelContainerFactory.destroyPersistentStores(appGroupID: nil)
         try? KeychainAccessURLStore().delete()
-        try? NetSnapshotStore().clear()
     }
 
     var body: some Scene {
