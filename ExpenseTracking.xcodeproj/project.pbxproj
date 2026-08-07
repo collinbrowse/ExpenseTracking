@@ -18,6 +18,7 @@
 		3572B38FE34FA13B23EF9CCC /* CategoryIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5B0CF9A3FE0413DF3383C1 /* CategoryIcon.swift */; };
 		35952B9C339D08E49F80CD18 /* CategorizationRulesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC6BA869713E4596BAF37CB4 /* CategorizationRulesViewModel.swift */; };
 		37999ECE509D1C74D1E5F4B3 /* DependencyContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1AD8287A06B085DC0FEA44 /* DependencyContainer.swift */; };
+		0367D3CD766A41F793C050D5 /* WidgetKitTimelineReloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A013F6DC1A49209FAED10B /* WidgetKitTimelineReloader.swift */; };
 		38C9087866C25402702D0627 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B967B99A96907027EBE7DAB /* AppRouter.swift */; };
 		3C2071DC27F43FF837DE9907 /* CategorizationRulesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 336A629053428CB32E3BC3A7 /* CategorizationRulesView.swift */; };
 		3D52C9362CCEE75D6A4E330F /* AppLockGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 818BA9B28223CF1B50FA3B7D /* AppLockGateView.swift */; };
