@@ -107,10 +107,10 @@ struct EnrichmentProgressTests {
                     amount: -9,
                     postedDate: .now,
                     description: "STARBUCKS",
-                    categoryID: SystemCategory.other.id
+                    categoryID: SystemCategory.undefined.id
                 ),
             ],
-            all: [
+            undefined: [
                 Transaction(
                     id: TransactionID("1"),
                     accountID: AccountID("a"),
@@ -118,7 +118,7 @@ struct EnrichmentProgressTests {
                     amount: -9,
                     postedDate: .now,
                     description: "STARBUCKS",
-                    categoryID: SystemCategory.other.id
+                    categoryID: SystemCategory.undefined.id
                 ),
             ]
         )
@@ -133,6 +133,7 @@ struct EnrichmentProgressTests {
             ),
             categoryEnricher: StubProgressCategoryEnricher(id: SystemCategory.dining.id),
             transactionRepository: txs,
+            accountRepository: EmptyAccountRepository(),
             ruleRepository: EmptyProgressRuleRepository(),
             workCoordinator: FoundationModelsWorkCoordinator()
         )
@@ -215,7 +216,7 @@ private struct StubProgressDescriptionEnricher: TransactionDescriptionEnriching 
 
 private struct StubProgressCategoryEnricher: TransactionCategoryEnriching {
     let id: CategoryID
-    func suggestCategory(description: String, amount: Decimal) async -> CategoryID? { id }
+    func suggestCategory(_ request: CategorySuggestionRequest) async -> CategoryID? { id }
 }
 
 private struct EmptyProgressRuleRepository: CategorizationRuleRepository {
@@ -227,10 +228,11 @@ private struct EmptyProgressRuleRepository: CategorizationRuleRepository {
 
 private final class MockEnrichmentProgressRepository: TransactionRepository, @unchecked Sendable {
     var needing: [Transaction]
-    let all: [Transaction]
-    init(needing: [Transaction], all: [Transaction]) {
+    var undefined: [Transaction]
+    init(needing: [Transaction], undefined: [Transaction]? = nil, all: [Transaction]? = nil) {
         self.needing = needing
-        self.all = all
+        self.undefined = undefined ?? needing.filter { $0.categoryID == SystemCategory.undefined.id }
+        _ = all
     }
 
     func fetchPage(
@@ -249,7 +251,10 @@ private final class MockEnrichmentProgressRepository: TransactionRepository, @un
         categoryLocked: Bool
     ) async throws {}
     func updateTags(transactionID: TransactionID, tagIDs: [TagID]) async throws {}
-    func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {}
+    func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {
+        let assigned = Set(assignments.map(\.transactionID))
+        undefined.removeAll { assigned.contains($0.id) }
+    }
     func applyTagAssignments(_ assignments: [TagAssignment]) async throws {}
     func updateEnrichment(
         transactionID: TransactionID,
@@ -263,8 +268,12 @@ private final class MockEnrichmentProgressRepository: TransactionRepository, @un
     func markEnrichmentSkipped(transactionID: TransactionID) async throws {
         needing = needing.filter { $0.id != transactionID }
     }
-    func fetchAllForCategorization() async throws -> [Transaction] { all }
-    
+    func fetchAllForCategorization() async throws -> [Transaction] { undefined }
+    func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction] {
+        Array(undefined.prefix(limit))
+    }
+    func countNeedingCategorySuggestion() async throws -> Int { undefined.count }
+
     func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {}
     func countNeedingEnrichment() async throws -> Int { needing.count }
     func countDistinctDescriptionsNeedingEnrichment() async throws -> Int { needing.count }
@@ -273,3 +282,9 @@ private final class MockEnrichmentProgressRepository: TransactionRepository, @un
         Array(needing.prefix(limit))
     }
 }
+
+private struct EmptyAccountRepository: AccountRepository {
+    func fetchAll() async throws -> [Account] { [] }
+    func updateName(accountID: AccountID, name: String) async throws {}
+}
+

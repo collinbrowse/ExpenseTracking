@@ -65,6 +65,8 @@ public struct RemoteTransactionSnapshot: Sendable, Equatable {
     public let description: String
     public let isPending: Bool
     public let suggestedCategoryID: CategoryID
+    /// When true (Demo fixtures), merge stores `suggestedCategoryID` as `.keyword` instead of Undefined.
+    public let preferSuggestedCategory: Bool
 
     public init(
         externalID: String,
@@ -72,7 +74,8 @@ public struct RemoteTransactionSnapshot: Sendable, Equatable {
         postedDate: Date,
         description: String,
         isPending: Bool = false,
-        suggestedCategoryID: CategoryID = SystemCategory.other.id
+        suggestedCategoryID: CategoryID = SystemCategory.other.id,
+        preferSuggestedCategory: Bool = false
     ) {
         self.externalID = externalID
         self.amount = amount
@@ -80,6 +83,7 @@ public struct RemoteTransactionSnapshot: Sendable, Equatable {
         self.description = description
         self.isPending = isPending
         self.suggestedCategoryID = suggestedCategoryID
+        self.preferSuggestedCategory = preferSuggestedCategory
     }
 }
 

@@ -64,7 +64,8 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
             suppressedTagIDs: transaction.suppressedTagIDs,
             enrichedTitle: transaction.enrichedTitle,
             enrichedLocation: transaction.enrichedLocation,
-            titleSource: transaction.titleSource
+            titleSource: transaction.titleSource,
+            categorySource: transaction.categorySource
         )
         let matching = CategorizationRuleMatcher.matchingRules(rules, transaction: matchTransaction)
         let categoryRule = categoryLocked ? nil : matching.first(where: \.appliesCategory)

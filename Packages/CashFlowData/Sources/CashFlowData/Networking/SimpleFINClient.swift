@@ -439,11 +439,6 @@ public struct SimpleFINClient: Sendable {
             let pending = tx.pending ?? (posted == 0)
             guard let amount = Decimal(string: tx.amount) else { return nil }
             let sanitizedDescription = sanitize(tx.description)
-            let parsed = ParseTransactionDescriptionUseCase.execute(sanitizedDescription)
-            let category = SuggestTransactionCategoryUseCase.execute(
-                description: parsed.title,
-                amount: amount
-            )
             // Pending often arrives with `posted == 0`. Use "now" so list sort/sections
             // stay current; MergeSyncPolicy keeps the first-seen date across re-syncs.
             let postedDate = posted == 0
@@ -455,7 +450,7 @@ public struct SimpleFINClient: Sendable {
                 postedDate: postedDate,
                 description: sanitizedDescription,
                 isPending: pending,
-                suggestedCategoryID: category
+                suggestedCategoryID: SystemCategory.undefined.id
             )
         }
         return RemoteAccountSnapshot(

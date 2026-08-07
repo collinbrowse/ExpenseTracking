@@ -9,6 +9,7 @@ public struct CategorizationRuleTransactionPrior: Hashable, Sendable, Codable {
     public let enrichedTitle: String?
     public let enrichedLocation: String?
     public let titleSource: TitleSource?
+    public let categorySource: CategorySource?
 
     public init(
         transactionID: TransactionID,
@@ -17,7 +18,8 @@ public struct CategorizationRuleTransactionPrior: Hashable, Sendable, Codable {
         tagIDs: [TagID],
         enrichedTitle: String?,
         enrichedLocation: String?,
-        titleSource: TitleSource?
+        titleSource: TitleSource?,
+        categorySource: CategorySource? = nil
     ) {
         self.transactionID = transactionID
         self.categoryID = categoryID
@@ -26,11 +28,12 @@ public struct CategorizationRuleTransactionPrior: Hashable, Sendable, Codable {
         self.enrichedTitle = enrichedTitle
         self.enrichedLocation = enrichedLocation
         self.titleSource = titleSource
+        self.categorySource = categorySource
     }
 
     private enum CodingKeys: String, CodingKey {
         case transactionID, categoryID, userEditedCategory, tagIDs
-        case enrichedTitle, enrichedLocation, titleSource
+        case enrichedTitle, enrichedLocation, titleSource, categorySource
         case description // legacy — ignored on decode
     }
 
@@ -43,6 +46,7 @@ public struct CategorizationRuleTransactionPrior: Hashable, Sendable, Codable {
         enrichedTitle = try container.decodeIfPresent(String.self, forKey: .enrichedTitle)
         enrichedLocation = try container.decodeIfPresent(String.self, forKey: .enrichedLocation)
         titleSource = try container.decodeIfPresent(TitleSource.self, forKey: .titleSource)
+        categorySource = try container.decodeIfPresent(CategorySource.self, forKey: .categorySource)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -54,6 +58,7 @@ public struct CategorizationRuleTransactionPrior: Hashable, Sendable, Codable {
         try container.encodeIfPresent(enrichedTitle, forKey: .enrichedTitle)
         try container.encodeIfPresent(enrichedLocation, forKey: .enrichedLocation)
         try container.encodeIfPresent(titleSource, forKey: .titleSource)
+        try container.encodeIfPresent(categorySource, forKey: .categorySource)
     }
 }
 
@@ -148,7 +153,8 @@ public enum UndoCategorizationRuleUseCase: Sendable {
                         CategoryAssignment(
                             transactionID: prior.transactionID,
                             categoryID: prior.categoryID,
-                            userEditedCategory: prior.userEditedCategory
+                            userEditedCategory: prior.userEditedCategory,
+                            categorySource: prior.categorySource
                         )
                     )
                 }
@@ -230,7 +236,8 @@ public enum UndoCategorizationRuleUseCase: Sendable {
                 tagIDs: tx.tagIDs,
                 enrichedTitle: tx.enrichedTitle,
                 enrichedLocation: tx.enrichedLocation,
-                titleSource: tx.titleSource
+                titleSource: tx.titleSource,
+                categorySource: tx.categorySource
             )
         }
     }

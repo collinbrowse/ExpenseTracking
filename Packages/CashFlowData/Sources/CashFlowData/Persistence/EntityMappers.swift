@@ -35,7 +35,8 @@ enum EntityMappers {
             suppressedTagIDs: suppressed,
             enrichedTitle: entity.enrichedTitle,
             enrichedLocation: entity.enrichedLocation,
-            titleSource: titleSource(from: entity.titleSourceRaw)
+            titleSource: titleSource(from: entity.titleSourceRaw),
+            categorySource: categorySource(from: entity.categorySourceRaw)
         )
     }
 
@@ -97,6 +98,15 @@ enum EntityMappers {
     }
 
     static func titleSourceRaw(from source: TitleSource?) -> String? {
+        source?.rawValue
+    }
+
+    static func categorySource(from raw: String?) -> CategorySource? {
+        guard let raw else { return nil }
+        return CategorySource(rawValue: raw)
+    }
+
+    static func categorySourceRaw(from source: CategorySource?) -> String? {
         source?.rawValue
     }
 }

@@ -5,7 +5,7 @@ import CashFlowKit
 
 @Suite("TransactionEnrichmentCoordinator")
 struct TransactionEnrichmentCoordinatorTests {
-    @Test("Skips work when model unavailable")
+    @Test("Skips LLM titles when model unavailable; still keyword-categorizes Undefined")
     func skipsWhenUnavailable() async {
         let txs = MockEnrichmentTransactionRepository(
             needing: [
@@ -16,7 +16,18 @@ struct TransactionEnrichmentCoordinatorTests {
                     amount: -9,
                     postedDate: .now,
                     description: "STARBUCKS BANGKOK TH",
-                    categoryID: SystemCategory.other.id
+                    categoryID: SystemCategory.undefined.id
+                ),
+            ],
+            undefined: [
+                Transaction(
+                    id: TransactionID("1"),
+                    accountID: AccountID("a"),
+                    externalID: "e",
+                    amount: -9,
+                    postedDate: .now,
+                    description: "STARBUCKS BANGKOK TH",
+                    categoryID: SystemCategory.undefined.id
                 ),
             ]
         )
@@ -31,15 +42,17 @@ struct TransactionEnrichmentCoordinatorTests {
             ),
             categoryEnricher: StubCategoryEnricher(id: SystemCategory.dining.id),
             transactionRepository: txs,
+            accountRepository: EmptyAccountRepository(),
             ruleRepository: EmptyRuleRepository(),
             workCoordinator: FoundationModelsWorkCoordinator()
         )
         await coordinator.enrichAfterSync()
         #expect(txs.enrichmentUpdates.isEmpty)
-        #expect(txs.categoryAssignments.isEmpty)
+        #expect(txs.categoryAssignments.count == 1)
+        #expect(txs.categoryAssignments[0].categorySource == .keyword)
     }
 
-    @Test("Writes description enrichment and Other→LLM category")
+    @Test("Writes description enrichment and Undefined→LLM category")
     func enrichesDescriptionAndCategory() async {
         let txs = MockEnrichmentTransactionRepository(
             needing: [
@@ -50,10 +63,10 @@ struct TransactionEnrichmentCoordinatorTests {
                     amount: -9,
                     postedDate: .now,
                     description: "STARBUCKS BANGKOK TH",
-                    categoryID: SystemCategory.other.id
+                    categoryID: SystemCategory.undefined.id
                 ),
             ],
-            all: [
+            undefined: [
                 Transaction(
                     id: TransactionID("1"),
                     accountID: AccountID("a"),
@@ -61,7 +74,7 @@ struct TransactionEnrichmentCoordinatorTests {
                     amount: -9,
                     postedDate: .now,
                     description: "STARBUCKS BANGKOK TH",
-                    categoryID: SystemCategory.other.id
+                    categoryID: SystemCategory.undefined.id
                 ),
             ]
         )
@@ -76,6 +89,7 @@ struct TransactionEnrichmentCoordinatorTests {
             ),
             categoryEnricher: StubCategoryEnricher(id: SystemCategory.dining.id),
             transactionRepository: txs,
+            accountRepository: EmptyAccountRepository(),
             ruleRepository: EmptyRuleRepository(),
             workCoordinator: FoundationModelsWorkCoordinator()
         )
@@ -86,6 +100,7 @@ struct TransactionEnrichmentCoordinatorTests {
         #expect(txs.categoryAssignments.count == 1)
         #expect(txs.categoryAssignments[0].categoryID == SystemCategory.dining.id)
         #expect(txs.categoryAssignments[0].userEditedCategory == false)
+        #expect(txs.categoryAssignments[0].categorySource == .llm)
     }
 }
 
@@ -102,7 +117,7 @@ private struct StubDescriptionEnricher: TransactionDescriptionEnriching {
 
 private struct StubCategoryEnricher: TransactionCategoryEnriching {
     let id: CategoryID?
-    func suggestCategory(description: String, amount: Decimal) async -> CategoryID? { id }
+    func suggestCategory(_ request: CategorySuggestionRequest) async -> CategoryID? { id }
 }
 
 private struct EmptyRuleRepository: CategorizationRuleRepository {
@@ -112,15 +127,21 @@ private struct EmptyRuleRepository: CategorizationRuleRepository {
     func reorder(ids: [CategorizationRuleID]) async throws {}
 }
 
+private struct EmptyAccountRepository: AccountRepository {
+    func fetchAll() async throws -> [Account] { [] }
+    func updateName(accountID: AccountID, name: String) async throws {}
+}
+
 private final class MockEnrichmentTransactionRepository: TransactionRepository, @unchecked Sendable {
     var needing: [Transaction]
-    var all: [Transaction]
+    var undefined: [Transaction]
     var enrichmentUpdates: [(id: TransactionID, title: String, location: String?)] = []
     var categoryAssignments: [CategoryAssignment] = []
 
-    init(needing: [Transaction], all: [Transaction]? = nil) {
+    init(needing: [Transaction], undefined: [Transaction]? = nil, all: [Transaction]? = nil) {
         self.needing = needing
-        self.all = all ?? needing
+        self.undefined = undefined ?? needing.filter { $0.categoryID == SystemCategory.undefined.id }
+        _ = all
     }
 
     func fetchPage(
@@ -141,6 +162,8 @@ private final class MockEnrichmentTransactionRepository: TransactionRepository, 
     func updateTags(transactionID: TransactionID, tagIDs: [TagID]) async throws {}
     func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws {
         categoryAssignments.append(contentsOf: assignments)
+        let assigned = Set(assignments.map(\.transactionID))
+        undefined.removeAll { assigned.contains($0.id) }
     }
     func applyTagAssignments(_ assignments: [TagAssignment]) async throws {}
     func updateEnrichment(
@@ -156,8 +179,12 @@ private final class MockEnrichmentTransactionRepository: TransactionRepository, 
     func markEnrichmentSkipped(transactionID: TransactionID) async throws {
         needing.removeAll { $0.id == transactionID }
     }
-    func fetchAllForCategorization() async throws -> [Transaction] { all }
-    
+    func fetchAllForCategorization() async throws -> [Transaction] { undefined }
+    func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction] {
+        Array(undefined.prefix(limit))
+    }
+    func countNeedingCategorySuggestion() async throws -> Int { undefined.count }
+
     func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {}
     func countNeedingEnrichment() async throws -> Int { needing.count }
     func countDistinctDescriptionsNeedingEnrichment() async throws -> Int { needing.count }

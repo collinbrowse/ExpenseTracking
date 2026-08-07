@@ -40,6 +40,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let enrichedLocation: String?
     /// Who authored the enrichment fields. Nil when no enrichment is present.
     public let titleSource: TitleSource?
+    /// Who authored `categoryID`. Nil on legacy rows (treat as keyword / unprocessed).
+    public let categorySource: CategorySource?
 
     public init(
         id: TransactionID,
@@ -57,7 +59,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         suppressedTagIDs: [TagID] = [],
         enrichedTitle: String? = nil,
         enrichedLocation: String? = nil,
-        titleSource: TitleSource? = nil
+        titleSource: TitleSource? = nil,
+        categorySource: CategorySource? = nil
     ) {
         self.id = id
         self.accountID = accountID
@@ -75,13 +78,14 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         self.enrichedTitle = enrichedTitle
         self.enrichedLocation = enrichedLocation
         self.titleSource = titleSource
+        self.categorySource = categorySource
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, accountID, externalID, amount, postedDate, description
         case categoryID, currencyCode, userEditedCategory, isPending
         case categoryLocked, tagIDs, suppressedTagIDs, enrichedTitle, enrichedLocation
-        case titleSource
+        case titleSource, categorySource
     }
 
     public init(from decoder: Decoder) throws {
@@ -102,6 +106,7 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         enrichedTitle = try container.decodeIfPresent(String.self, forKey: .enrichedTitle)
         enrichedLocation = try container.decodeIfPresent(String.self, forKey: .enrichedLocation)
         titleSource = try container.decodeIfPresent(TitleSource.self, forKey: .titleSource)
+        categorySource = try container.decodeIfPresent(CategorySource.self, forKey: .categorySource)
     }
 
     /// Display title: enrichment when present, else raw bank description.
@@ -129,15 +134,18 @@ public struct CategoryAssignment: Hashable, Sendable {
     public let transactionID: TransactionID
     public let categoryID: CategoryID
     public let userEditedCategory: Bool
+    public let categorySource: CategorySource?
 
     public init(
         transactionID: TransactionID,
         categoryID: CategoryID,
-        userEditedCategory: Bool
+        userEditedCategory: Bool,
+        categorySource: CategorySource? = nil
     ) {
         self.transactionID = transactionID
         self.categoryID = categoryID
         self.userEditedCategory = userEditedCategory
+        self.categorySource = categorySource
     }
 }
 

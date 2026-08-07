@@ -97,6 +97,8 @@ public final class TransactionEntity {
     public var enrichedLocation: String?
     /// `TitleSource.rawValue` for the enrichment fields; nil when no enrichment is present.
     public var titleSourceRaw: String? = nil
+    /// `CategorySource.rawValue` for who authored `categoryID`; nil when unprocessed / legacy.
+    public var categorySourceRaw: String? = nil
     /// JSON-encoded `[TagID]` the user removed; rules must not re-add these.
     public var suppressedTagIDsData: Data? = nil
     /// Composite uniqueness helper: accountExternalID + transactionExternalID
@@ -125,6 +127,7 @@ public final class TransactionEntity {
         enrichedTitle: String? = nil,
         enrichedLocation: String? = nil,
         titleSourceRaw: String? = nil,
+        categorySourceRaw: String? = nil,
         suppressedTagIDsData: Data? = nil
     ) {
         self.id = id
@@ -143,6 +146,7 @@ public final class TransactionEntity {
         self.enrichedTitle = enrichedTitle
         self.enrichedLocation = enrichedLocation
         self.titleSourceRaw = titleSourceRaw
+        self.categorySourceRaw = categorySourceRaw
         self.suppressedTagIDsData = suppressedTagIDsData
         self.tags = []
     }

@@ -17,6 +17,7 @@ struct EnrichmentDrainHardeningTests {
             descriptionEnricher: enricher,
             categoryEnricher: NoCategoryEnricher(),
             transactionRepository: txs,
+            accountRepository: EmptyAccountRepository(),
             ruleRepository: NoRuleRepository(),
             workCoordinator: FoundationModelsWorkCoordinator()
         )
@@ -47,6 +48,7 @@ struct EnrichmentDrainHardeningTests {
             descriptionEnricher: enricher,
             categoryEnricher: NoCategoryEnricher(),
             transactionRepository: txs,
+            accountRepository: EmptyAccountRepository(),
             ruleRepository: NoRuleRepository(),
             workCoordinator: FoundationModelsWorkCoordinator()
         )
@@ -85,6 +87,7 @@ struct EnrichmentDrainHardeningTests {
             descriptionEnricher: FixedEnricher(title: "Merchant"),
             categoryEnricher: NoCategoryEnricher(),
             transactionRepository: txs,
+            accountRepository: EmptyAccountRepository(),
             ruleRepository: NoRuleRepository(),
             workCoordinator: FoundationModelsWorkCoordinator()
         )
@@ -300,7 +303,7 @@ private final class TotalsRecorder: @unchecked Sendable {
 }
 
 private struct NoCategoryEnricher: TransactionCategoryEnriching {
-    func suggestCategory(description: String, amount: Decimal) async -> CategoryID? { nil }
+    func suggestCategory(_ request: CategorySuggestionRequest) async -> CategoryID? { nil }
 }
 
 private struct NoRuleRepository: CategorizationRuleRepository {
@@ -361,6 +364,8 @@ private actor StuckSkipRepository: TransactionRepository {
     }
 
     func fetchAllForCategorization() async throws -> [Transaction] { [] }
+    func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction] { [] }
+    func countNeedingCategorySuggestion() async throws -> Int { 0 }
 
     func countNeedingEnrichment() async throws -> Int {
         countCalls += 1
@@ -375,3 +380,9 @@ private actor StuckSkipRepository: TransactionRepository {
         Array(needing.prefix(limit))
     }
 }
+
+private struct EmptyAccountRepository: AccountRepository {
+    func fetchAll() async throws -> [Account] { [] }
+    func updateName(accountID: AccountID, name: String) async throws {}
+}
+

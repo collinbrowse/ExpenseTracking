@@ -17,13 +17,13 @@ public struct CompositeTransactionCategoryEnricher: TransactionCategoryEnriching
         self.workCoordinator = workCoordinator
     }
 
-    public func suggestCategory(description: String, amount: Decimal) async -> CategoryID? {
+    public func suggestCategory(_ request: CategorySuggestionRequest) async -> CategoryID? {
         guard !(await workCoordinator.isAssetsUnavailable) else {
             return nil
         }
         guard await availability.availability() == .available, let foundation else {
             return nil
         }
-        return await foundation.suggestCategory(description: description, amount: amount)
+        return await foundation.suggestCategory(request)
     }
 }

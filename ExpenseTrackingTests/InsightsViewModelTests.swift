@@ -148,6 +148,8 @@ private struct InsightsMockTransactionRepository: TransactionRepository {
     ) async throws {}
     func markEnrichmentSkipped(transactionID: TransactionID) async throws {}
     func fetchAllForCategorization() async throws -> [Transaction] { transactions }
+    func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction] { [] }
+    func countNeedingCategorySuggestion() async throws -> Int { 0 }
     
     func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {}
     func countNeedingEnrichment() async throws -> Int { 0 }

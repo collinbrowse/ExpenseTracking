@@ -343,7 +343,8 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
                 return CategoryAssignment(
                     transactionID: tx.id,
                     categoryID: proposal.categoryID,
-                    userEditedCategory: true
+                    userEditedCategory: true,
+                    categorySource: .user
                 )
             }
             try await transactionRepository.applyCategoryAssignments(assignments)

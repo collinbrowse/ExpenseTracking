@@ -21,6 +21,7 @@ enum CategoryIcon {
         case .creditCardPayment: "creditcard"
         case .hidden: "eye.slash"
         case .other, .none: "circle.grid.2x2"
+        case .undefined: "questionmark.circle"
         }
     }
 }

@@ -47,6 +47,7 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             guard let after = afterByID[prior.transactionID] else { return false }
             return after.categoryID != prior.categoryID
                 || after.userEditedCategory != prior.userEditedCategory
+                || after.categorySource != prior.categorySource
                 || Set(after.tagIDs) != Set(prior.tagIDs)
                 || after.enrichedTitle != prior.enrichedTitle
                 || after.enrichedLocation != prior.enrichedLocation
@@ -98,6 +99,7 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             guard let tx = try context.fetch(desc).first else { continue }
             tx.categoryID = assignment.categoryID.rawValue
             tx.userEditedCategory = assignment.userEditedCategory
+            tx.categorySourceRaw = EntityMappers.categorySourceRaw(from: assignment.categorySource)
             touched.insert(assignment.transactionID)
         }
         for assignment in restorations.tagAssignments {
@@ -177,9 +179,11 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
             if !current.categoryLocked, resolved.matchedCategoryRule {
                 if entity.categoryID != resolved.categoryID.rawValue
                     || entity.userEditedCategory != true
+                    || entity.categorySourceRaw != CategorySource.rule.rawValue
                 {
                     entity.categoryID = resolved.categoryID.rawValue
                     entity.userEditedCategory = true
+                    entity.categorySourceRaw = CategorySource.rule.rawValue
                     didChange = true
                 }
             }
