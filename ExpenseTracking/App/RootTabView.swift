@@ -394,6 +394,7 @@ private struct EnrichmentPromptSheet: View {
                     .frame(maxWidth: .infinity)
                 Button("Not Now", action: onNotNow)
                     .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("enrichment.notNow")
             }
             .padding()
             .navigationTitle("Transaction Cleanup")
