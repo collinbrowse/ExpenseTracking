@@ -1,6 +1,9 @@
 import XCTest
 
-/// Demo happy-path smoke: onboarding → Home net/chart → Insights → Transactions.
+/// Demo happy-path smoke: seeded Demo ledger → Home net/chart → Insights → Transactions.
+///
+/// Demo data is seeded synchronously under `-uiTesting` so CI does not depend on async
+/// `loadDemo` / WidgetKit / Foundation Models (which hang on unsigned simulators).
 final class DemoHappyPathUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -9,57 +12,29 @@ final class DemoHappyPathUITests: XCTestCase {
     @MainActor
     func testDemoHappyPath() throws {
         let app = XCUIApplication()
-        app.launchArguments += [
-            "-uiTesting",
-            "-AppleLanguages", "(en)",
-        ]
+        app.launchArguments = ["-uiTesting", "-AppleLanguages", "(en)"]
+        app.launchEnvironment["UITESTING"] = "1"
         app.launch()
 
-        let demoButton = app.buttons["onboarding.demo"]
+        let uiTestingRoot = app.descendants(matching: .any)["uiTesting.root"]
         XCTAssertTrue(
-            demoButton.waitForExistence(timeout: 20),
-            "Onboarding Demo button should appear on a fresh UITest launch"
+            uiTestingRoot.waitForExistence(timeout: 20),
+            "App should launch in UITest mode"
         )
-        demoButton.tap()
-
-        // Do not wait for the Demo button to vanish: it stays in the hierarchy while
-        // disabled during loadDemo. Wait for Home (or enrichment prompt) instead.
-        let net = app.descendants(matching: .any)["home.net"]
-        let notNow = app.buttons["enrichment.notNow"]
-        let labeledNotNow = app.buttons["Not Now"]
-        let deadline = Date().addingTimeInterval(60)
-        var sawHomeOrPrompt = false
-        while Date() < deadline {
-            if notNow.exists {
-                notNow.tap()
-                sawHomeOrPrompt = true
-                break
-            }
-            if labeledNotNow.exists {
-                labeledNotNow.tap()
-                sawHomeOrPrompt = true
-                break
-            }
-            if net.exists {
-                sawHomeOrPrompt = true
-                break
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        }
-        XCTAssertTrue(sawHomeOrPrompt, "Demo load should reveal Home or enrichment prompt")
 
         let homeTab = app.tabBars.buttons["Home"]
         if homeTab.waitForExistence(timeout: 5) {
             homeTab.tap()
         }
 
+        let net = app.descendants(matching: .any)["home.net"]
         let loading = app.descendants(matching: .any)["home.loading"]
-        if loading.waitForExistence(timeout: 3) {
+        if loading.waitForExistence(timeout: 5) {
             _ = loading.waitForNonExistence(timeout: 30)
         }
         XCTAssertTrue(
             net.waitForExistence(timeout: 30),
-            "Home net should appear after Demo load"
+            "Home net should appear with seeded Demo data"
         )
 
         let chart = app.descendants(matching: .any)["home.chart"]

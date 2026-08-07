@@ -5,20 +5,34 @@ import CashFlowData
 @main
 struct ExpenseTrackingApp: App {
     private let container: DependencyContainer
+    private let isUITesting: Bool
 
     init() {
-        let arguments = ProcessInfo.processInfo.arguments
-        let uiTesting = arguments.contains("-uiTesting")
+        let uiTesting = Self.isUITestingLaunch
+        self.isUITesting = uiTesting
         if uiTesting {
             Self.prepareForUITesting()
         }
-        let largeSeed = arguments.contains("-largeDemoSeed")
+        let largeSeed = ProcessInfo.processInfo.arguments.contains("-largeDemoSeed")
         // Resilient SwiftData bootstrap — never crash launch on store migration.
         container = DependencyContainer(largeDemoSeed: largeSeed, uiTesting: uiTesting)
-        guard !uiTesting else { return }
+        if uiTesting {
+            do {
+                try UITestDemoSeeder.seedStandardDemo(into: container.modelContainer)
+                UserDefaults.standard.set(true, forKey: "didCompleteOnboarding")
+            } catch {
+                assertionFailure("UITest demo seed failed: \(error)")
+            }
+            return
+        }
         // BGProcessingTask handlers must register before launch finishes.
         container.backgroundEnrichment.registerHandlers()
         container.backgroundEnrichment.scheduleUnattendedContinuation()
+    }
+
+    private static var isUITestingLaunch: Bool {
+        ProcessInfo.processInfo.arguments.contains("-uiTesting")
+            || ProcessInfo.processInfo.environment["UITESTING"] == "1"
     }
 
     /// Deterministic UITest launch: onboarding reset, no lock, no link secrets.
@@ -33,6 +47,7 @@ struct ExpenseTrackingApp: App {
         WindowGroup {
             RootTabView(container: container)
                 .modelContainer(container.modelContainer)
+                .accessibilityIdentifier(isUITesting ? "uiTesting.root" : "app.root")
         }
     }
 }

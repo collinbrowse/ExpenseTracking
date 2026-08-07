@@ -39,4 +39,23 @@ struct DemoNetCashFlowTests {
         #expect(result.net == expectedIncome - expectedExpense)
         #expect(result.net != 0)
     }
+
+    @Test("UITest seeder writes Demo accounts and a durable Demo connection")
+    func uiTestSeederPersistsDemoLedger() throws {
+        let container = try ModelContainerFactory.make(inMemory: true)
+        try UITestDemoSeeder.seedStandardDemo(into: container)
+
+        let context = ModelContext(container)
+        let accounts = try context.fetch(FetchDescriptor<AccountEntity>())
+        #expect(accounts.count == 2)
+
+        let transactions = try context.fetch(FetchDescriptor<TransactionEntity>())
+        #expect(transactions.count > 50)
+
+        var connectionDescriptor = FetchDescriptor<ConnectionEntity>()
+        connectionDescriptor.fetchLimit = 1
+        let connection = try context.fetch(connectionDescriptor).first
+        #expect(connection?.isDemo == true)
+        #expect(connection?.providerName == "Demo")
+    }
 }
