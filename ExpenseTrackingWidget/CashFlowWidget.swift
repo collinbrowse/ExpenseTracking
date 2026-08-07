@@ -8,17 +8,23 @@ import CashFlowData
 
 enum WidgetTimeFrameAppEnum: String, AppEnum {
     case thisMonth
-    case lastMonth
+    case previousMonth
     case last30Days
-    case custom
+    case previous3Months
+    case last90Days
+    case previous6Months
+    case last180Days
 
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Time Frame")
 
     static let caseDisplayRepresentations: [WidgetTimeFrameAppEnum: DisplayRepresentation] = [
         .thisMonth: "This Month",
-        .lastMonth: "Last Month",
+        .previousMonth: "Previous Month",
         .last30Days: "Last 30 Days",
-        .custom: "Custom",
+        .previous3Months: "Previous 3 Months",
+        .last90Days: "Last 90 Days",
+        .previous6Months: "Previous 6 Months",
+        .last180Days: "Last 180 Days",
     ]
 
     var domain: WidgetCashFlowTimeFrame {
@@ -33,26 +39,12 @@ struct CashFlowWidgetConfigurationIntent: WidgetConfigurationIntent {
     @Parameter(title: "Time Frame", default: .thisMonth)
     var timeFrame: WidgetTimeFrameAppEnum
 
-    @Parameter(title: "Start Date")
-    var customStart: Date?
-
-    @Parameter(title: "End Date")
-    var customEnd: Date?
-
     init() {
         self.timeFrame = .thisMonth
-        self.customStart = nil
-        self.customEnd = nil
     }
 
-    init(
-        timeFrame: WidgetTimeFrameAppEnum,
-        customStart: Date?,
-        customEnd: Date?
-    ) {
+    init(timeFrame: WidgetTimeFrameAppEnum) {
         self.timeFrame = timeFrame
-        self.customStart = customStart
-        self.customEnd = customEnd
     }
 }
 
@@ -96,9 +88,7 @@ struct CashFlowTimelineProvider: AppIntentTimelineProvider {
         for configuration: CashFlowWidgetConfigurationIntent
     ) async -> CashFlowWidgetEntry {
         let totals = await WidgetNetCashFlowLoader().load(
-            timeFrame: configuration.timeFrame.domain,
-            customStart: configuration.customStart,
-            customEnd: configuration.customEnd
+            timeFrame: configuration.timeFrame.domain
         )
         return CashFlowWidgetEntry(date: .now, totals: totals)
     }

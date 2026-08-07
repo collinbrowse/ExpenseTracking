@@ -14,8 +14,9 @@ struct WidgetNetCashFlowLoaderTests {
 
     @Test("Different time frames yield different totals on the same store")
     func rangesProduceIndependentTotals() async throws {
+        // Use Calendar.current — fetchPosted resolves ranges with the system calendar.
         let now = Date(timeIntervalSince1970: 1_720_000_000) // ~2024-07-03 UTC
-        let calendar = utcCalendar
+        let calendar = Calendar.current
         let container = try ModelContainerFactory.make(inMemory: true)
         let context = ModelContext(container)
         let account = AccountEntity(
@@ -70,7 +71,7 @@ struct WidgetNetCashFlowLoaderTests {
             posted: twentyDaysAgo,
             category: SystemCategory.dining.id.rawValue
         )
-        // ~45 days ago expense (outside last 30 days, inside six-month custom)
+        // ~45 days ago expense (outside last 30 days, inside last 90 / previous 6 months)
         let fortyFiveDaysAgo = calendar.date(byAdding: .day, value: -45, to: now)!
         insertTx(
             context: context,
@@ -80,7 +81,7 @@ struct WidgetNetCashFlowLoaderTests {
             posted: fortyFiveDaysAgo,
             category: SystemCategory.dining.id.rawValue
         )
-        // Five months ago income (inside six-month custom, outside last 30)
+        // Five months ago income (inside previous 6 months, outside last 90)
         let fiveMonthsAgo = calendar.date(byAdding: .month, value: -5, to: now)!
         insertTx(
             context: context,
@@ -118,8 +119,8 @@ struct WidgetNetCashFlowLoaderTests {
             now: now,
             calendar: calendar
         ))
-        let lastMonth = try #require(await loader.load(
-            timeFrame: .lastMonth,
+        let previousMonth = try #require(await loader.load(
+            timeFrame: .previousMonth,
             now: now,
             calendar: calendar
         ))
@@ -128,11 +129,13 @@ struct WidgetNetCashFlowLoaderTests {
             now: now,
             calendar: calendar
         ))
-        let sixMonthsStart = calendar.date(byAdding: .month, value: -6, to: now)!
-        let sixMonths = try #require(await loader.load(
-            timeFrame: .custom,
-            customStart: sixMonthsStart,
-            customEnd: now,
+        let previous6 = try #require(await loader.load(
+            timeFrame: .previous6Months,
+            now: now,
+            calendar: calendar
+        ))
+        let last90 = try #require(await loader.load(
+            timeFrame: .last90Days,
             now: now,
             calendar: calendar
         ))
@@ -142,24 +145,30 @@ struct WidgetNetCashFlowLoaderTests {
         #expect(thisMonth.net == Decimal(900))
         #expect(thisMonth.rangeLabel == "This Month")
 
-        #expect(lastMonth.incomeTotal == Decimal(500))
-        #expect(lastMonth.expenseTotal == Decimal(25))
-        #expect(lastMonth.net == Decimal(475))
-        #expect(lastMonth.rangeLabel == "Last Month")
+        #expect(previousMonth.incomeTotal == Decimal(500))
+        #expect(previousMonth.expenseTotal == Decimal(25))
+        #expect(previousMonth.net == Decimal(475))
+        #expect(previousMonth.rangeLabel == "Previous Month")
 
         // Last 30 includes this-month txs + mid prior-month expense, not early-June income
         #expect(last30.incomeTotal == Decimal(1000))
         #expect(last30.expenseTotal == Decimal(125))
         #expect(last30.net == Decimal(875))
 
-        // Custom six months includes everything posted except pending/transfer
-        #expect(sixMonths.incomeTotal == Decimal(1700))
-        #expect(sixMonths.expenseTotal == Decimal(175))
-        #expect(sixMonths.net == Decimal(1525))
+        // Previous 6 Months = full months before July (Jan–Jun): excludes this-month txs
+        #expect(previous6.incomeTotal == Decimal(700))
+        #expect(previous6.expenseTotal == Decimal(75))
+        #expect(previous6.net == Decimal(625))
+        #expect(previous6.rangeLabel == "Previous 6 Months")
 
-        // Independence: Home-style last-30 vs widget custom six months differ
-        #expect(last30.net != sixMonths.net)
-        #expect(thisMonth.net != lastMonth.net)
+        // Last 90 Days includes this month + prior-month txs + 45d expense; not 5-month-old income
+        #expect(last90.incomeTotal == Decimal(1500))
+        #expect(last90.expenseTotal == Decimal(175))
+        #expect(last90.net == Decimal(1325))
+        #expect(last90.rangeLabel == "Last 90 Days")
+
+        #expect(previous6.net != last90.net)
+        #expect(thisMonth.net != previousMonth.net)
         #expect(thisMonth.net != last30.net)
     }
 
