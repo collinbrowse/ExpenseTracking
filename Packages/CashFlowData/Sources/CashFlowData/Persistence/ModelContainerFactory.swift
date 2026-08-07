@@ -108,7 +108,8 @@ public enum ModelContainerFactory {
 
     /// `false` when the process lacks the App Group entitlement (unsigned CI / many test hosts).
     public static func isAppGroupAvailable(_ appGroupID: String) -> Bool {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil
+        guard !appGroupID.isEmpty else { return false }
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil
     }
 
     /// Removes SwiftData/SQLite store files from App Group + local Application Support.
