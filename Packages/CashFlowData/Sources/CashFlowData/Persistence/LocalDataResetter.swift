@@ -5,13 +5,16 @@ import CashFlowKit
 public actor LocalDataResetter {
     private let modelContainer: ModelContainer
     private let snapshotStore: NetSnapshotStore
+    private let widgetTimelineReloader: any WidgetTimelineReloading
 
     public init(
         modelContainer: ModelContainer,
-        snapshotStore: NetSnapshotStore = NetSnapshotStore()
+        snapshotStore: NetSnapshotStore = NetSnapshotStore(),
+        widgetTimelineReloader: any WidgetTimelineReloading = NoOpWidgetTimelineReloader()
     ) {
         self.modelContainer = modelContainer
         self.snapshotStore = snapshotStore
+        self.widgetTimelineReloader = widgetTimelineReloader
     }
 
     public func resetAll() async throws {
@@ -45,6 +48,7 @@ public actor LocalDataResetter {
             }
             try context.save()
             try? snapshotStore.clear()
+            widgetTimelineReloader.reloadCashFlowWidget()
         } catch let error as CashFlowError {
             throw error
         } catch {

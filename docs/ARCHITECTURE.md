@@ -11,9 +11,9 @@ Clean Architecture (layered) + **MVVM** at the UI edge. Swift 6 strict concurren
 | Module | Path | Responsibility |
 |--------|------|----------------|
 | **CashFlowKit** | `Packages/CashFlowKit` | Domain models, use cases, ports. **Foundation only.** |
-| **CashFlowData** | `Packages/CashFlowData` | SwiftData, URLSession / SimpleFIN, Keychain, Demo provider, SyncCoordinator, NetSnapshotStore. |
+| **CashFlowData** | `Packages/CashFlowData` | SwiftData, URLSession / SimpleFIN, Keychain, Demo provider, SyncCoordinator, WidgetNetCashFlowLoader. |
 | **ExpenseTracking** | `ExpenseTracking/` | SwiftUI features, DesignSystem, composition root (`DependencyContainer`). |
-| **ExpenseTrackingWidget** | `ExpenseTrackingWidget/` | WidgetKit extension; reads `NetSnapshotStore` JSON. |
+| **ExpenseTrackingWidget** | `ExpenseTrackingWidget/` | WidgetKit extension; live App Group SwiftData via `WidgetNetCashFlowLoader`. |
 
 Dependency direction:
 
@@ -26,9 +26,9 @@ Features call **ports / use cases**. Only `ExpenseTracking/App/DependencyContain
 
 ### CashFlowKit (domain)
 
-- Models: `Transaction`, `Account`, `Category` / `SystemCategory`, `CashFlowDateRange`, filters, errors
-- Ports: `TransactionRepository`, `BankLinkingServing`, `SyncServing`, …
-- Use cases: `CalculateNetCashFlowUseCase`, `CashFlowContribution`, `MergeSyncPolicy`
+- Models: `Transaction`, `Account`, `Category` / `SystemCategory`, `CashFlowDateRange`, `WidgetCashFlowTimeFrame`, filters, errors
+- Ports: `TransactionRepository`, `BankLinkingServing`, `SyncServing`, `WidgetTimelineReloading`, …
+- Use cases: `CalculateNetCashFlowUseCase`, `CashFlowContribution`, `MergeSyncPolicy`, `CashFlowCurrencyFormatting`
 
 Money amounts are `Decimal` end-to-end in domain/data/UI models. Charts may convert to `Double` at the plot edge only.
 
@@ -38,7 +38,8 @@ Money amounts are `Decimal` end-to-end in domain/data/UI models. Charts may conv
 - Networking: `HTTPClient` → `SimpleFINClient` → `SimpleFINBankLinkingService`
 - Demo: `DemoBankLinkingService` (+ composite router for Demo vs linked Access URL)
 - Sync: single-flight `SyncCoordinator` + `SyncMergeEngine`
-- Widget feed: `NetSnapshotStore` (App Group, with Application Support fallback)
+- Widget: `WidgetNetCashFlowLoader` reads shared App Group SwiftData; leftover `NetSnapshotStore` cleared on wipe
+- Timeline reload: `WidgetTimelineReloading` after Home reload / successful sync / wipe
 
 ### ExpenseTracking (UI)
 
@@ -70,7 +71,7 @@ Implemented only in `CalculateNetCashFlowUseCase` / `CashFlowContribution`:
 
 1. Provider fetch (Demo or SimpleFIN) via `BankLinkingServing`
 2. Merge into SwiftData (`MergeSyncPolicy`: local category edits win; remote amount/date/description win)
-3. On success, write month net snapshot for the widget
+3. On success, reload widget timelines (`WidgetTimelineReloading`) so each instance recomputes its configured range
 4. On failure, keep last good local data and surface a banner
 
 `SyncCoordinator` is single-flight (overlapping syncs coalesce / cancel appropriately).

@@ -95,7 +95,7 @@ public enum ModelContainerFactory {
     }
 
     /// `false` when the process lacks the App Group entitlement (unsigned CI / many test hosts).
-    static func isAppGroupAvailable(_ appGroupID: String) -> Bool {
+    public static func isAppGroupAvailable(_ appGroupID: String) -> Bool {
         FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil
     }
 
