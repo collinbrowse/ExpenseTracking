@@ -47,14 +47,17 @@ struct WidgetNetCashFlowLoaderTests {
             posted: now,
             category: SystemCategory.dining.id.rawValue
         )
-        // Last month income
-        let lastMonthDay = calendar.date(byAdding: .month, value: -1, to: now)!
+        // Early prior month income — inside Last Month, outside Last 30 Days
+        // (now − 30d lands on the same calendar day last month; stay earlier).
+        let lastMonthStart = calendar.date(
+            from: calendar.dateComponents([.year, .month], from: calendar.date(byAdding: .month, value: -1, to: now)!)
+        )!
         insertTx(
             context: context,
             account: account,
             id: "lm1",
             amount: 500,
-            posted: lastMonthDay,
+            posted: lastMonthStart,
             category: SystemCategory.income.id.rawValue
         )
         // Mid prior month expense — inside Last 30 Days + Last Month, outside This Month
@@ -110,54 +113,54 @@ struct WidgetNetCashFlowLoaderTests {
 
         let loader = WidgetNetCashFlowLoader(modelContainer: container)
 
-        let thisMonth = await loader.load(
+        let thisMonth = try #require(await loader.load(
             timeFrame: .thisMonth,
             now: now,
             calendar: calendar
-        )
-        let lastMonth = await loader.load(
+        ))
+        let lastMonth = try #require(await loader.load(
             timeFrame: .lastMonth,
             now: now,
             calendar: calendar
-        )
-        let last30 = await loader.load(
+        ))
+        let last30 = try #require(await loader.load(
             timeFrame: .last30Days,
             now: now,
             calendar: calendar
-        )
+        ))
         let sixMonthsStart = calendar.date(byAdding: .month, value: -6, to: now)!
-        let sixMonths = await loader.load(
+        let sixMonths = try #require(await loader.load(
             timeFrame: .custom,
             customStart: sixMonthsStart,
             customEnd: now,
             now: now,
             calendar: calendar
-        )
+        ))
 
-        #expect(thisMonth?.incomeTotal == 1000)
-        #expect(thisMonth?.expenseTotal == 100)
-        #expect(thisMonth?.net == 900)
-        #expect(thisMonth?.rangeLabel == "This Month")
+        #expect(thisMonth.incomeTotal == Decimal(1000))
+        #expect(thisMonth.expenseTotal == Decimal(100))
+        #expect(thisMonth.net == Decimal(900))
+        #expect(thisMonth.rangeLabel == "This Month")
 
-        #expect(lastMonth?.incomeTotal == 500)
-        #expect(lastMonth?.expenseTotal == 25)
-        #expect(lastMonth?.net == 475)
-        #expect(lastMonth?.rangeLabel == "Last Month")
+        #expect(lastMonth.incomeTotal == Decimal(500))
+        #expect(lastMonth.expenseTotal == Decimal(25))
+        #expect(lastMonth.net == Decimal(475))
+        #expect(lastMonth.rangeLabel == "Last Month")
 
-        // Last 30 includes this-month txs + mid prior-month expense, not 45 days ago
-        #expect(last30?.incomeTotal == 1000)
-        #expect(last30?.expenseTotal == 100 + 25)
-        #expect(last30?.net == 1000 - 125)
+        // Last 30 includes this-month txs + mid prior-month expense, not early-June income
+        #expect(last30.incomeTotal == Decimal(1000))
+        #expect(last30.expenseTotal == Decimal(125))
+        #expect(last30.net == Decimal(875))
 
         // Custom six months includes everything posted except pending/transfer
-        #expect(sixMonths?.incomeTotal == 1000 + 500 + 200)
-        #expect(sixMonths?.expenseTotal == 100 + 25 + 50)
-        #expect(sixMonths?.net == (1000 + 500 + 200) - (100 + 25 + 50))
+        #expect(sixMonths.incomeTotal == Decimal(1700))
+        #expect(sixMonths.expenseTotal == Decimal(175))
+        #expect(sixMonths.net == Decimal(1525))
 
         // Independence: Home-style last-30 vs widget custom six months differ
-        #expect(last30?.net != sixMonths?.net)
-        #expect(thisMonth?.net != lastMonth?.net)
-        #expect(thisMonth?.net != last30?.net)
+        #expect(last30.net != sixMonths.net)
+        #expect(thisMonth.net != lastMonth.net)
+        #expect(thisMonth.net != last30.net)
     }
 
     @Test("Empty store returns zero totals")
@@ -173,7 +176,10 @@ struct WidgetNetCashFlowLoaderTests {
 
     @Test("Unavailable App Group returns nil for default loader")
     func unavailableAppGroup() async {
-        let loader = WidgetNetCashFlowLoader(appGroupID: "group.com.expensetracking.missing.for.tests")
+        // Fake group IDs must not fall back to this process's Application Support.
+        let loader = WidgetNetCashFlowLoader(
+            appGroupID: "group.com.expensetracking.unavailable-ci"
+        )
         let totals = await loader.load(timeFrame: .thisMonth)
         #expect(totals == nil)
     }
