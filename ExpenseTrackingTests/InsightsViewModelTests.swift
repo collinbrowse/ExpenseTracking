@@ -57,59 +57,6 @@ struct InsightsViewModelTests {
         #expect(vm.tagRows.first?.total == 100)
         #expect(vm.expenseTotalText == CurrencyFormatting.usd(100))
     }
-
-    @Test("Tag focus scopes category breakdown; combining with category ANDs filters")
-    func combinedFocusFilters() async throws {
-        let trip = CashFlowKit.Tag(id: TagID("trip"), name: "Japan Trip", createdAt: .distantPast)
-        let repo = InsightsMockTransactionRepository(
-            transactions: [
-                Transaction(
-                    id: TransactionID("1"),
-                    accountID: AccountID("a"),
-                    externalID: "1",
-                    amount: -50,
-                    postedDate: .now,
-                    description: "Fee",
-                    categoryID: SystemCategory.feesCharges.id,
-                    tagIDs: [trip.id]
-                ),
-                Transaction(
-                    id: TransactionID("2"),
-                    accountID: AccountID("a"),
-                    externalID: "2",
-                    amount: -20,
-                    postedDate: .now,
-                    description: "Food",
-                    categoryID: SystemCategory.dining.id,
-                    tagIDs: [trip.id]
-                ),
-                Transaction(
-                    id: TransactionID("3"),
-                    accountID: AccountID("a"),
-                    externalID: "3",
-                    amount: -15,
-                    postedDate: .now,
-                    description: "Other fee",
-                    categoryID: SystemCategory.feesCharges.id
-                ),
-            ]
-        )
-        let vm = InsightsViewModel(
-            transactionRepository: repo,
-            tagRepository: InsightsMockTagRepository(tags: [trip]),
-            syncServing: InsightsMockSyncServing(),
-            calculateSpendingBreakdown: CalculateSpendingBreakdownUseCase()
-        )
-        await vm.reload()
-        vm.toggleTagFocus(trip.id)
-        #expect(vm.expenseTotalText == CurrencyFormatting.usd(70))
-        #expect(vm.categoryRows.count == 2)
-
-        vm.toggleCategoryFocus(SystemCategory.feesCharges.id)
-        #expect(vm.expenseTotalText == CurrencyFormatting.usd(50))
-        #expect(vm.categoryRows.map(\.id) == [SystemCategory.feesCharges.id.rawValue])
-        #expect(vm.tagRows.map(\.id) == [trip.id.rawValue])
-    }
 }
 
 private struct InsightsMockTransactionRepository: TransactionRepository {

@@ -13,6 +13,7 @@
 		0EBF6F0A258BAFB764F4746D /* HomeRangeOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D7C90DEF9C2C555D59F74DF /* HomeRangeOption.swift */; };
 		261430CD8301182DC433B626 /* CashFlowWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3FCFCCAC67FE975168E1093 /* CashFlowWidget.swift */; };
 		2D2637D4415DA7734E8B6134 /* HomeViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB1A1F5F797ECAAF4EFE033B /* HomeViewModelTests.swift */; };
+		A0E65AACD9CD4F17BF7CD1B8 /* ZeroCrossingSeriesBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40ABEF04BA9434886EB08D0 /* ZeroCrossingSeriesBuilderTests.swift */; };
 		2ECD40B67DEB9033AFCEE6E4 /* AppLockViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41234919FF565D23F5BB3347 /* AppLockViewModelTests.swift */; };
 		3572B38FE34FA13B23EF9CCC /* CategoryIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5B0CF9A3FE0413DF3383C1 /* CategoryIcon.swift */; };
 		35952B9C339D08E49F80CD18 /* CategorizationRulesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC6BA869713E4596BAF37CB4 /* CategorizationRulesViewModel.swift */; };
@@ -142,6 +143,7 @@
 		EA1AD8287A06B085DC0FEA44 /* DependencyContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DependencyContainer.swift; sourceTree = "<group>"; };
 		F0C17FE9BD534E5B79FBFF2D /* NetCashFlowChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetCashFlowChartView.swift; sourceTree = "<group>"; };
 		FB1A1F5F797ECAAF4EFE033B /* HomeViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModelTests.swift; sourceTree = "<group>"; };
+		E40ABEF04BA9434886EB08D0 /* ZeroCrossingSeriesBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZeroCrossingSeriesBuilderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -332,6 +334,7 @@
 				FB1A1F5F797ECAAF4EFE033B /* HomeViewModelTests.swift */,
 				C036F2FCD67F7EB5DB633F42 /* InsightsViewModelTests.swift */,
 				90BF73861C7663A004025CE8 /* SyncProgressFormattingTests.swift */,
+				E40ABEF04BA9434886EB08D0 /* ZeroCrossingSeriesBuilderTests.swift */,
 			);
 			path = ExpenseTrackingTests;
 			sourceTree = "<group>";
@@ -538,6 +541,7 @@
 				2D2637D4415DA7734E8B6134 /* HomeViewModelTests.swift in Sources */,
 				77E6FF5C2D3E54E5E11D5D9B /* InsightsViewModelTests.swift in Sources */,
 				0CB13B0135FE814B9214E403 /* SyncProgressFormattingTests.swift in Sources */,
+				A0E65AACD9CD4F17BF7CD1B8 /* ZeroCrossingSeriesBuilderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

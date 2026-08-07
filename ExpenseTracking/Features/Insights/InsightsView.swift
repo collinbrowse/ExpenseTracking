@@ -3,9 +3,9 @@ import CashFlowKit
 
 struct InsightsView: View {
     @Bindable var viewModel: InsightsViewModel
-    /// Opens Transactions with the current Insights date range plus optional category/tag scope.
-    var onViewTransactions: (CategoryID?, TagID?, TransactionDateFilterOption, Date, Date) -> Void
     @State private var isComposingTag = false
+    @State private var selectedCategoryRowID: String?
+    @State private var selectedTagRowID: String?
 
     var body: some View {
         ScrollView {
@@ -33,25 +33,17 @@ struct InsightsView: View {
                 .accessibilityIdentifier("insights.rangePicker")
                 .disabled(viewModel.isLoading)
 
-                if viewModel.isLoading && !viewModel.hasExpenseData && !viewModel.hasFocusFilters {
+                if viewModel.isLoading && !viewModel.hasExpenseData {
                     ProgressView("Loading spending…")
                         .frame(maxWidth: .infinity)
                         .padding(.top, 48)
                         .accessibilityIdentifier("insights.loading")
                 } else {
-                    if viewModel.hasFocusFilters {
-                        focusFiltersRow
-                    }
-
                     spendingHeader
 
                     categorySection
 
                     tagSection
-
-                    if viewModel.hasFocusFilters {
-                        viewTransactionsButton
-                    }
 
                     manageTagsButton
                 }
@@ -65,6 +57,16 @@ struct InsightsView: View {
         }
         .task {
             await viewModel.onAppear()
+        }
+        .onChange(of: viewModel.categoryRows.map(\.id)) { _, ids in
+            if let selectedCategoryRowID, !ids.contains(selectedCategoryRowID) {
+                self.selectedCategoryRowID = nil
+            }
+        }
+        .onChange(of: viewModel.tagRows.map(\.id)) { _, ids in
+            if let selectedTagRowID, !ids.contains(selectedTagRowID) {
+                self.selectedTagRowID = nil
+            }
         }
         .sheet(isPresented: $viewModel.showCustomRange) {
             NavigationStack {
@@ -91,61 +93,9 @@ struct InsightsView: View {
         }
     }
 
-    private var focusFiltersRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Showing")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    if let name = viewModel.focusCategoryName {
-                        focusChip(label: name, kind: "category") {
-                            viewModel.clearCategoryFocus()
-                        }
-                    }
-                    if let name = viewModel.focusTagName {
-                        focusChip(label: name, kind: "tag") {
-                            viewModel.clearTagFocus()
-                        }
-                    }
-                    if viewModel.focusCategoryID != nil && viewModel.focusTagID != nil {
-                        Button("Clear all") {
-                            viewModel.clearAllFocus()
-                        }
-                        .font(.subheadline)
-                    }
-                }
-            }
-            Text("Tap another category or tag to combine filters.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityIdentifier("insights.focusFilters")
-    }
-
-    private func focusChip(label: String, kind: String, onClear: @escaping () -> Void) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Button(action: onClear) {
-                Image(systemName: "xmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Clear \(label)")
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.accentColor.opacity(0.15), in: Capsule())
-        .accessibilityIdentifier("insights.focus.\(kind)")
-    }
-
     private var spendingHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(viewModel.hasFocusFilters ? "Filtered spend" : "Total spent")
+            Text("Total spent")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Text(viewModel.expenseTotalText)
@@ -162,28 +112,21 @@ struct InsightsView: View {
                 .font(.title3.weight(.semibold))
 
             if viewModel.categoryRows.isEmpty {
-                Text(
-                    viewModel.hasFocusFilters
-                        ? "No expenses match these filters."
-                        : "No expenses in this range."
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("insights.category.empty")
+                Text("No expenses in this range.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("insights.category.empty")
             } else {
-                SpendingBreakdownChartView(rows: Array(viewModel.categoryRows.prefix(8)))
-                ForEach(viewModel.categoryRows) { row in
-                    let categoryID = CategoryID(row.id)
-                    let selected = viewModel.focusCategoryID == categoryID
-                    Button {
-                        viewModel.toggleCategoryFocus(categoryID)
-                    } label: {
-                        sliceRow(row, isSelected: selected)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("insights.category.\(row.id)")
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                }
+                let chartRows = Array(viewModel.categoryRows.prefix(8))
+                SpendingBreakdownChartView(
+                    rows: chartRows,
+                    selectedRowID: $selectedCategoryRowID
+                )
+                saleTagScroller(
+                    rows: chartRows,
+                    selectedRowID: $selectedCategoryRowID,
+                    accessibilityPrefix: "insights.category"
+                )
             }
         }
     }
@@ -194,74 +137,60 @@ struct InsightsView: View {
                 .font(.title3.weight(.semibold))
 
             if viewModel.tagRows.isEmpty {
-                Text(
-                    viewModel.focusCategoryID != nil
-                        ? "No tagged expenses in this category."
-                        : "Tag transactions to track trips, events, and projects."
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("insights.tag.empty")
+                Text("Tag transactions to track trips, events, and projects.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("insights.tag.empty")
             } else {
-                SpendingBreakdownChartView(rows: Array(viewModel.tagRows.prefix(8)))
-                ForEach(viewModel.tagRows) { row in
-                    let tagID = TagID(row.id)
-                    let selected = viewModel.focusTagID == tagID
+                let chartRows = Array(viewModel.tagRows.prefix(8))
+                SpendingBreakdownChartView(
+                    rows: chartRows,
+                    selectedRowID: $selectedTagRowID
+                )
+                saleTagScroller(
+                    rows: chartRows,
+                    selectedRowID: $selectedTagRowID,
+                    accessibilityPrefix: "insights.tag"
+                )
+            }
+        }
+    }
+
+    private func saleTagScroller(
+        rows: [InsightsSliceRow],
+        selectedRowID: Binding<String?>,
+        accessibilityPrefix: String
+    ) -> some View {
+        let chartIDs = rows.map(\.id)
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(rows) { row in
+                    let isSelected = selectedRowID.wrappedValue == row.id
                     Button {
-                        viewModel.toggleTagFocus(tagID)
+                        if selectedRowID.wrappedValue == row.id {
+                            selectedRowID.wrappedValue = nil
+                        } else {
+                            selectedRowID.wrappedValue = row.id
+                        }
                     } label: {
-                        sliceRow(row, isSelected: selected)
+                        SaleTagChip(
+                            title: row.name,
+                            percentText: "\(Int((row.share * 100).rounded()))%",
+                            color: Theme.chartColor(for: row.id, among: chartIDs),
+                            isSelected: isSelected
+                        )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityIdentifier("insights.tag.\(row.id)")
-                    .accessibilityAddTraits(selected ? .isSelected : [])
+                    .accessibilityIdentifier("\(accessibilityPrefix).\(row.id)")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    .accessibilityLabel("\(row.name), \(Int((row.share * 100).rounded())) percent")
+                    .accessibilityValue(isSelected ? "Selected, \(row.amountText)" : row.amountText)
+                    .accessibilityHint("Pins this category on the chart. Tap again to clear.")
                 }
             }
+            .padding(.vertical, 4)
         }
-    }
-
-    private func sliceRow(_ row: InsightsSliceRow, isSelected: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.name)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                Text(isSelected ? "Filtered" : "\(Int((row.share * 100).rounded()))%")
-                    .font(.caption)
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-            }
-            Spacer()
-            Text(row.amountText)
-                .font(.body.monospacedDigit())
-                .foregroundStyle(.primary)
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "plus.circle")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(isSelected ? Color.accentColor : Color(uiColor: .tertiaryLabel))
-        }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(
-            isSelected ? Color.accentColor.opacity(0.08) : Color.clear,
-            in: RoundedRectangle(cornerRadius: 10)
-        )
-        .contentShape(Rectangle())
-    }
-
-    private var viewTransactionsButton: some View {
-        Button {
-            onViewTransactions(
-                viewModel.focusCategoryID,
-                viewModel.focusTagID,
-                viewModel.drillDownDateOption,
-                viewModel.customStart,
-                viewModel.customEnd
-            )
-        } label: {
-            Label("View transactions", systemImage: "list.bullet")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.borderedProminent)
-        .accessibilityIdentifier("insights.viewTransactions")
+        .accessibilityIdentifier("\(accessibilityPrefix).tags")
     }
 
     private var manageTagsButton: some View {

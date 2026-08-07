@@ -17,17 +17,73 @@ enum Theme {
     /// Outflow / negative net — high-contrast label color (Wallet-like), not red-by-default.
     static let negative = Color(uiColor: .label)
 
+    /// Chart stroke/fill for values below zero (adaptive red; not used for Wallet-like amount text).
+    static let chartNegative = Color(uiColor: UIColor { traits in
+        switch traits.userInterfaceStyle {
+        case .dark:
+            UIColor(red: 1.0, green: 0.42, blue: 0.42, alpha: 1)
+        default:
+            UIColor(red: 0.80, green: 0.16, blue: 0.16, alpha: 1)
+        }
+    })
+
     static let muted = Color(uiColor: .secondaryLabel)
     /// Sync / connection problems on Accounts (high visibility, not destructive red).
     static let warning = Color(uiColor: .systemOrange)
     static let screenPadding: CGFloat = 20
     static let sectionSpacing: CGFloat = 24
 
+    /// Distinct hues for Insights pie sectors / legend swatches (top 8 slices).
+    static let chartPalette: [Color] = [
+        Color(uiColor: .systemBlue),
+        Color(uiColor: .systemOrange),
+        Color(uiColor: .systemTeal),
+        Color(uiColor: .systemPurple),
+        Color(uiColor: .systemPink),
+        Color(uiColor: .systemIndigo),
+        Color(uiColor: .systemYellow),
+        Color(uiColor: .systemBrown),
+        Color(uiColor: .systemMint),
+        Color(uiColor: .systemCyan)
+    ]
+
     /// Amount color for a signed cash-flow value.
     static func amountColor(for value: Decimal) -> Color {
         if value > 0 { return positive }
         if value < 0 { return negative }
         return Color(uiColor: .label)
+    }
+
+    /// Stable pie/legend color for a slice id within the currently displayed rows.
+    static func chartColor(for id: String, among ids: [String]) -> Color {
+        guard !chartPalette.isEmpty else { return Color.accentColor }
+        if let index = ids.firstIndex(of: id) {
+            return chartPalette[index % chartPalette.count]
+        }
+        return chartPalette[stableIndex(for: id) % chartPalette.count]
+    }
+
+    private static func stableIndex(for id: String) -> Int {
+        // Simple stable string hash (djb2) so colors do not jump across launches.
+        var hash: UInt64 = 5381
+        for byte in id.utf8 {
+            hash = ((hash << 5) &+ hash) &+ UInt64(byte)
+        }
+        return Int(hash % UInt64(chartPalette.count))
+    }
+
+    /// Readable label color on a filled chart/tag background.
+    static func contrastingLabel(on background: Color) -> Color {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard UIColor(background).getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return .white
+        }
+        // Relative luminance (sRGB).
+        let luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+        return luminance > 0.62 ? Color.black.opacity(0.88) : Color.white
     }
 }
 
@@ -44,13 +100,11 @@ struct ChartSelectionCallout: View {
     }
 
     private var amountColor: Color {
-        // Prefer semantic positive green; for negative/zero use pure label so chart
-        // tint / material cannot wash the text out.
-        if net > 0 {
-            return contrast == .increased
-                ? Color(uiColor: .label) // max contrast when Increase Contrast is on
-                : Theme.positive
+        if contrast == .increased {
+            return Color(uiColor: .label)
         }
+        if net > 0 { return Theme.positive }
+        if net < 0 { return Theme.chartNegative }
         return Color(uiColor: .label)
     }
 
