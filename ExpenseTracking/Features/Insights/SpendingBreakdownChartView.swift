@@ -2,12 +2,15 @@ import SwiftUI
 import Charts
 import CashFlowKit
 
-/// Interactive spending pie chart with press-and-drag angle selection.
-/// Selection stays pinned after finger lift; dollar amounts show in the callout.
+/// Interactive spending pie chart.
+/// - Sale-tag chips pin a sticky selection (handled by the parent binding).
+/// - On the pie itself, only press-and-drag scrubs sectors; taps do nothing.
+/// - Drag highlight is live only — lifting the finger returns to the chip pin (or none).
 struct SpendingBreakdownChartView: View {
     let rows: [InsightsSliceRow]
     @Binding var selectedRowID: String?
 
+    /// Live scrub value while dragging; cleared on finger lift (never pinned from the pie).
     @State private var gestureAngle: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -50,22 +53,25 @@ struct SpendingBreakdownChartView: View {
                 .accessibilityValue(row.amountText)
             }
             .chartAngleSelection(value: $gestureAngle)
+            // Replace the default tap+drag selection with drag-only scrubbing.
+            .chartGesture { proxy in
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        let angle = proxy.angle(at: value.location)
+                        proxy.selectAngleValue(at: angle)
+                    }
+                    .onEnded { _ in
+                        gestureAngle = nil
+                    }
+            }
             .chartLegend(.hidden)
             .frame(height: 240)
-            .onChange(of: gestureAngle) { _, newValue in
-                guard let newValue, let row = row(forAngle: newValue) else { return }
-                // Pin on every live angle update so selection survives finger lift
-                // (Charts clears gestureAngle when the gesture ends).
-                if selectedRowID != row.id {
-                    selectedRowID = row.id
-                }
-            }
             .sensoryFeedback(.selection, trigger: selectedRow?.id) { old, new in
                 !reduceMotion && old != new && new != nil
             }
         }
         .accessibilityIdentifier("insights.chart")
-        .accessibilityLabel("Spending breakdown pie chart. Tap or press and drag to inspect category amounts.")
+        .accessibilityLabel("Spending breakdown pie chart. Press and drag to inspect amounts. Use category tags to pin a selection.")
         .accessibilityValue(selectionAccessibilityValue)
     }
 

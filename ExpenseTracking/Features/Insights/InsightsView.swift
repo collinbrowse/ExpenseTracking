@@ -185,7 +185,7 @@ struct InsightsView: View {
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                     .accessibilityLabel("\(row.name), \(Int((row.share * 100).rounded())) percent")
                     .accessibilityValue(isSelected ? "Selected, \(row.amountText)" : row.amountText)
-                    .accessibilityHint("Shows spending amount on the chart")
+                    .accessibilityHint("Pins this category on the chart. Tap again to clear.")
                 }
             }
             .padding(.vertical, 4)
