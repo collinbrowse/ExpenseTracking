@@ -171,14 +171,16 @@ struct InsightsView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("insights.category.empty")
             } else {
-                SpendingBreakdownChartView(rows: Array(viewModel.categoryRows.prefix(8)))
+                let chartRows = Array(viewModel.categoryRows.prefix(8))
+                let chartIDs = chartRows.map(\.id)
+                SpendingBreakdownChartView(rows: chartRows)
                 ForEach(viewModel.categoryRows) { row in
                     let categoryID = CategoryID(row.id)
                     let selected = viewModel.focusCategoryID == categoryID
                     Button {
                         viewModel.toggleCategoryFocus(categoryID)
                     } label: {
-                        sliceRow(row, isSelected: selected)
+                        sliceRow(row, isSelected: selected, chartIDs: chartIDs)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("insights.category.\(row.id)")
@@ -203,14 +205,16 @@ struct InsightsView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("insights.tag.empty")
             } else {
-                SpendingBreakdownChartView(rows: Array(viewModel.tagRows.prefix(8)))
+                let chartRows = Array(viewModel.tagRows.prefix(8))
+                let chartIDs = chartRows.map(\.id)
+                SpendingBreakdownChartView(rows: chartRows)
                 ForEach(viewModel.tagRows) { row in
                     let tagID = TagID(row.id)
                     let selected = viewModel.focusTagID == tagID
                     Button {
                         viewModel.toggleTagFocus(tagID)
                     } label: {
-                        sliceRow(row, isSelected: selected)
+                        sliceRow(row, isSelected: selected, chartIDs: chartIDs)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("insights.tag.\(row.id)")
@@ -220,8 +224,13 @@ struct InsightsView: View {
         }
     }
 
-    private func sliceRow(_ row: InsightsSliceRow, isSelected: Bool) -> some View {
-        HStack {
+    private func sliceRow(_ row: InsightsSliceRow, isSelected: Bool, chartIDs: [String]) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(Theme.chartColor(for: row.id, among: chartIDs))
+                .frame(width: 10, height: 10)
+                .accessibilityHidden(true)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
                     .font(.body.weight(.medium))
@@ -231,9 +240,6 @@ struct InsightsView: View {
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             }
             Spacer()
-            Text(row.amountText)
-                .font(.body.monospacedDigit())
-                .foregroundStyle(.primary)
             Image(systemName: isSelected ? "checkmark.circle.fill" : "plus.circle")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(isSelected ? Color.accentColor : Color(uiColor: .tertiaryLabel))
