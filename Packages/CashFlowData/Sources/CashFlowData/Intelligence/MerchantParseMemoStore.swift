@@ -4,7 +4,7 @@ import CashFlowKit
 
 /// SwiftData-backed memo of validated merchant parses keyed by normalized bank description.
 public actor MerchantParseMemoStore {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
     private let modelContainer: ModelContainer
 

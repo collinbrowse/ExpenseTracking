@@ -116,6 +116,50 @@ struct EnrichmentSanitizerTests {
         )
         #expect(rule.applySnapshotData == nil)
     }
+
+    @Test("Strips location left in lazy LLM titles")
+    func stripsLazyLocationFromTitle() throws {
+        let container = try ModelContainerFactory.make(inMemory: true)
+        let context = ModelContext(container)
+        let account = AccountEntity(
+            id: "acct",
+            externalID: "ext",
+            name: "Checking",
+            institutionName: "Bank",
+            currencyCode: "USD",
+            balance: 1,
+            balanceDate: .now
+        )
+        context.insert(account)
+        context.insert(
+            TransactionEntity(
+                id: "t1",
+                externalID: "u1",
+                accountID: account.id,
+                amount: -42.54,
+                postedDate: .now,
+                transactionDescription: "TEQUILAS       DURANGO      CO",
+                categoryID: SystemCategory.other.id.rawValue,
+                currencyCode: "USD",
+                userEditedCategory: false,
+                isPending: false,
+                syncKey: "ext|u1",
+                account: account,
+                enrichedTitle: "TEQUILAS DURANGO CO",
+                enrichedLocation: "DURANGO CO",
+                titleSourceRaw: TitleSource.llm.rawValue
+            )
+        )
+        try context.save()
+
+        try EnrichmentSanitizer.run(modelContainer: container)
+
+        let tx = try #require(
+            try ModelContext(container).fetch(FetchDescriptor<TransactionEntity>()).first
+        )
+        #expect(tx.enrichedTitle == "TEQUILAS")
+        #expect(tx.enrichedLocation == "DURANGO CO")
+    }
 }
 
 private struct FixedMemoAvailability: OnDeviceModelAvailabilityChecking {

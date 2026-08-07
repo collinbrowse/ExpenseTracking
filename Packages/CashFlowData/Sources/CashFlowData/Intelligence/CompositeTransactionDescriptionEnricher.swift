@@ -1,7 +1,7 @@
 import Foundation
 import CashFlowKit
 
-/// Tries on-device LLM enrichment when available; otherwise returns an empty title (no heuristic).
+/// Tries on-device LLM enrichment when available; otherwise returns an empty title.
 public struct CompositeTransactionDescriptionEnricher: TransactionDescriptionEnriching {
     private let availability: any OnDeviceModelAvailabilityChecking
     private let foundation: (any TransactionDescriptionEnriching)?

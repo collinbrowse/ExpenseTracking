@@ -7,10 +7,16 @@ import FoundationModels
 @available(iOS 26, macOS 26, *)
 @Generable
 struct MerchantLocationFields {
-    @Guide(description: "Clean merchant or payee name without location, store numbers, or bank codes")
+    @Guide(description: """
+        Merchant or payee name only. Do not include city, state, ZIP, country, store numbers, \
+        or bank padding. Never repeat words that belong in location.
+        """)
     var title: String
 
-    @Guide(description: "City, region, state, or country if present in the description; empty string if none")
+    @Guide(description: """
+        Geographic location only (city and state/region/country) when clearly present in the \
+        text; otherwise empty string. Do not put the merchant name here.
+        """)
     var location: String
 }
 
@@ -34,14 +40,25 @@ public struct FoundationModelsDescriptionEnricher: TransactionDescriptionEnrichi
                 let session = LanguageModelSession(
                     model: model,
                     instructions: """
-                    Extract merchant/payee names and locations from bank transaction descriptions.
-                    Return a clean human-readable merchant title and any geographic location.
-                    Do not invent a location that is not suggested by the text.
-                    Never return schema type names, property names, or placeholder tokens.
+                    Split bank transaction descriptions into a merchant/payee title and an \
+                    optional geographic location.
+                    Rules:
+                    - title = who was paid (or who paid), readable, without city/state/country.
+                    - location = city and state (or region/country) only when those words appear \
+                      in the description; otherwise empty.
+                    - Never copy location words into title. Never invent geography.
+                    - Drop store numbers, terminal IDs, and excess bank padding from title.
+                    - Never return schema type names, property names, or placeholder tokens.
+                    Examples:
+                    - "TEQUILAS DURANGO CO" → title "Tequilas", location "Durango CO"
+                    - "KROGER #412 FORT COLLINS CO" → title "Kroger", location "Fort Collins CO"
+                    - "STARBUCKS STORE 12345 SEATTLE WA" → title "Starbucks", location "Seattle WA"
+                    - "ACH PAYROLL ACME CORP" → title "ACH Payroll Acme Corp", location ""
+                    - "AMERICAN EXPRESS CO" → title "American Express", location ""
                     """
                 )
                 let response = try await session.respond(
-                    to: "Parse this transaction description:\n\(trimmed)",
+                    to: "Parse this transaction description into title and location:\n\(trimmed)",
                     generating: MerchantLocationFields.self
                 )
                 let title = response.content.title.trimmingCharacters(in: .whitespacesAndNewlines)
