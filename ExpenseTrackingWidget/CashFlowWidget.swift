@@ -12,9 +12,9 @@ enum WidgetTimeFrameAppEnum: String, AppEnum {
     case last30Days
     case custom
 
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Time Frame")
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Time Frame")
 
-    static var caseDisplayRepresentations: [WidgetTimeFrameAppEnum: DisplayRepresentation] = [
+    static let caseDisplayRepresentations: [WidgetTimeFrameAppEnum: DisplayRepresentation] = [
         .thisMonth: "This Month",
         .lastMonth: "Last Month",
         .last30Days: "Last 30 Days",
@@ -27,8 +27,8 @@ enum WidgetTimeFrameAppEnum: String, AppEnum {
 }
 
 struct CashFlowWidgetConfigurationIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "Cash Flow"
-    static var description = IntentDescription("Choose which time frame the widget shows.")
+    static let title: LocalizedStringResource = "Cash Flow"
+    static let description = IntentDescription("Choose which time frame the widget shows.")
 
     @Parameter(title: "Time Frame", default: .thisMonth)
     var timeFrame: WidgetTimeFrameAppEnum

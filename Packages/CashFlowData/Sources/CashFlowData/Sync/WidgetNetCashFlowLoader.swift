@@ -94,9 +94,6 @@ public struct WidgetNetCashFlowLoader: Sendable {
         if let injectedContainer {
             return injectedContainer
         }
-        guard ModelContainerFactory.isAppGroupAvailable(appGroupID) else {
-            return nil
-        }
-        return ModelContainerFactory.makeResilient(appGroupID: appGroupID)
+        return ModelContainerFactory.makeSharedStoreIfAvailable(appGroupID: appGroupID)
     }
 }
