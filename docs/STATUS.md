@@ -88,7 +88,7 @@ Code: `Packages/CashFlowData/`
 ### Widget
 
 - Small, medium, and accessory rectangular layouts
-- Edit Widget time frame: **This Month** (default), **Last Month**, **Last 30 Days**, **Custom** (start/end)
+- Edit Widget time frame: **This Month** (default), **Previous Month**, **Last 30 Days**, **Previous 3 Months**, **Last 90 Days**, **Previous 6 Months**, **Last 180 Days**
 - Live net / +in / −out from shared App Group SwiftData via `WidgetNetCashFlowLoader` + `CalculateNetCashFlowUseCase`
 - Home reload and successful sync call `WidgetCenter.reloadTimelines` so each widget instance recomputes **its own** configured range (not Home’s selected range)
 - UI: one-line scaled signed net; green `+$` income row and red `−$` expense row (no `In · Out` bullet line)

@@ -44,23 +44,11 @@ public struct WidgetNetCashFlowLoader: Sendable {
 
     public func load(
         timeFrame: WidgetCashFlowTimeFrame,
-        customStart: Date? = nil,
-        customEnd: Date? = nil,
         now: Date = .now,
         calendar: Calendar = .current
     ) async -> WidgetNetCashFlowTotals? {
-        let range = timeFrame.dateRange(
-            customStart: customStart,
-            customEnd: customEnd,
-            now: now,
-            calendar: calendar
-        )
-        let label = timeFrame.rangeLabel(
-            customStart: customStart,
-            customEnd: customEnd,
-            now: now,
-            calendar: calendar
-        )
+        let range = timeFrame.dateRange(now: now, calendar: calendar)
+        let label = timeFrame.rangeLabel()
         return await load(range: range, rangeLabel: label, now: now)
     }
 
