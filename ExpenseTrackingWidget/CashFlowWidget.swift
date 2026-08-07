@@ -110,40 +110,51 @@ struct CashFlowWidgetView: View {
     var entry: CashFlowWidgetEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(entry.totals?.rangeLabel ?? "Cash Flow")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 0)
 
             Text(netText)
                 .font(.title.bold().monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.4)
                 .allowsTightening(true)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let totals = entry.totals {
-                Text(CashFlowCurrencyFormatting.signedIncomeUSD(totals.incomeTotal))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color.green)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.4)
-                    .allowsTightening(true)
+            Spacer(minLength: 0)
 
-                Text(CashFlowCurrencyFormatting.signedExpenseUSD(totals.expenseTotal))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color.red)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.4)
-                    .allowsTightening(true)
-            } else {
-                Text("Open the app to sync")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+            Group {
+                if let totals = entry.totals {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(CashFlowCurrencyFormatting.signedIncomeUSD(totals.incomeTotal))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Color.green)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.4)
+                            .allowsTightening(true)
+
+                        Text(CashFlowCurrencyFormatting.signedExpenseUSD(totals.expenseTotal))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Color.red)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.4)
+                            .allowsTightening(true)
+                    }
+                } else {
+                    Text("Open the app to sync")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .containerBackground(for: .widget) {
