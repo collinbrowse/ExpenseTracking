@@ -95,6 +95,7 @@ final class DependencyContainer {
             descriptionEnricher: descriptionEnricher,
             categoryEnricher: categoryEnricher,
             transactionRepository: transactionRepository,
+            accountRepository: accountRepository,
             ruleRepository: categorizationRuleRepository,
             memoStore: MerchantParseMemoStore(modelContainer: modelContainer),
             workCoordinator: workCoordinator

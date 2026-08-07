@@ -531,7 +531,7 @@ struct MergeSyncPolicyRulesTests {
         )
         let merged = MergeSyncPolicy.merge(local: nil, remote: remote, rules: [rule])
         #expect(merged.isPending)
-        #expect(merged.categoryID == SystemCategory.other.id)
+        #expect(merged.categoryID == SystemCategory.undefined.id)
         #expect(merged.userEditedCategory == false)
         #expect(merged.description == "AMAZON MARKETPLACE")
         #expect(merged.tagIDs.isEmpty)
@@ -606,7 +606,7 @@ struct MergeSyncPolicyRulesTests {
         let merged = MergeSyncPolicy.merge(local: local, remote: remote, rules: [rule])
         #expect(merged.isPending)
         #expect(merged.amount == -12)
-        #expect(merged.categoryID == SystemCategory.groceries.id)
+        #expect(merged.categoryID == SystemCategory.undefined.id)
         #expect(merged.userEditedCategory == false)
     }
 

@@ -1,15 +1,18 @@
 import Foundation
 
-/// Domain merge policy: remote wins amount/date/description; lock / user rules / user edit gate
-/// category; matching rename rules update enrichment (never bank description); rule tags are
-/// additive and honor per-tag suppressions.
+/// Domain merge policy: remote wins amount/date/description; lock / rules / user edit / LLM
+/// gate category; matching rename rules update enrichment (never bank description); rule tags
+/// are additive and honor per-tag suppressions.
 ///
-/// Pending remotes skip user rules (same as re-apply / assistant). Rules apply when the row posts.
+/// New rows start as Undefined until enrichment (LLM, then keyword fallback), unless
+/// `preferSuggestedCategory` (Demo fixtures) stamps remote’s suggested category as `.keyword`.
+/// Pending remotes skip user rules. Rules apply when the row posts.
 public enum MergeSyncPolicy: Sendable {
     public static func merge(
         local: Transaction?,
         remote: Transaction,
-        rules: [CategorizationRule] = []
+        rules: [CategorizationRule] = [],
+        preferSuggestedCategory: Bool = false
     ) -> Transaction {
         let effectiveRules = remote.isPending ? [] : rules
 
@@ -18,8 +21,8 @@ public enum MergeSyncPolicy: Sendable {
                 transaction: remote,
                 rules: effectiveRules,
                 categoryLocked: false,
-                currentCategoryID: remote.categoryID,
-                fallbackCategoryID: remote.categoryID
+                currentCategoryID: SystemCategory.undefined.id,
+                fallbackCategoryID: SystemCategory.undefined.id
             )
             let (title, location, source) = appliedEnrichment(
                 existingTitle: nil,
@@ -28,6 +31,20 @@ public enum MergeSyncPolicy: Sendable {
                 resolved: resolved,
                 fallbackTitle: nil
             )
+            let categoryID: CategoryID
+            let categorySource: CategorySource?
+            if resolved.matchedCategoryRule {
+                categoryID = resolved.categoryID
+                categorySource = .rule
+            } else if preferSuggestedCategory,
+                      remote.categoryID != SystemCategory.undefined.id
+            {
+                categoryID = remote.categoryID
+                categorySource = .keyword
+            } else {
+                categoryID = SystemCategory.undefined.id
+                categorySource = nil
+            }
             return Transaction(
                 id: remote.id,
                 accountID: remote.accountID,
@@ -35,9 +52,9 @@ public enum MergeSyncPolicy: Sendable {
                 amount: remote.amount,
                 postedDate: remote.postedDate,
                 description: remote.description,
-                categoryID: resolved.categoryID,
+                categoryID: categoryID,
                 currencyCode: remote.currencyCode,
-                userEditedCategory: resolved.matchedUserRule,
+                userEditedCategory: categorySource?.isUserEditedCompat ?? false,
                 isPending: remote.isPending,
                 categoryLocked: false,
                 tagIDs: ResolveTransactionCategoryUseCase.applyingTags(
@@ -48,7 +65,8 @@ public enum MergeSyncPolicy: Sendable {
                 suppressedTagIDs: [],
                 enrichedTitle: title,
                 enrichedLocation: location,
-                titleSource: source
+                titleSource: source,
+                categorySource: categorySource
             )
         }
 
@@ -56,8 +74,6 @@ public enum MergeSyncPolicy: Sendable {
         // If the bank string changes, clear enrichment so it can be refilled.
         let descriptionChanged = local.description != remote.description
 
-        let categoryID: CategoryID
-        let userEdited: Bool
         let locked = local.categoryLocked
         let matchBase = Transaction(
             id: local.id,
@@ -75,19 +91,25 @@ public enum MergeSyncPolicy: Sendable {
             suppressedTagIDs: local.suppressedTagIDs,
             enrichedTitle: descriptionChanged ? nil : local.enrichedTitle,
             enrichedLocation: descriptionChanged ? nil : local.enrichedLocation,
-            titleSource: descriptionChanged ? nil : local.titleSource
+            titleSource: descriptionChanged ? nil : local.titleSource,
+            categorySource: local.categorySource
         )
 
         let resolved: ResolvedCategory
+        let categoryID: CategoryID
+        let categorySource: CategorySource?
+        let userEdited: Bool
+
         if locked {
             resolved = ResolveTransactionCategoryUseCase.execute(
                 transaction: matchBase,
                 rules: effectiveRules,
                 categoryLocked: true,
                 currentCategoryID: local.categoryID,
-                fallbackCategoryID: remote.categoryID
+                fallbackCategoryID: SystemCategory.undefined.id
             )
             categoryID = local.categoryID
+            categorySource = local.categorySource
             userEdited = local.userEditedCategory
         } else {
             resolved = ResolveTransactionCategoryUseCase.execute(
@@ -95,16 +117,34 @@ public enum MergeSyncPolicy: Sendable {
                 rules: effectiveRules,
                 categoryLocked: false,
                 currentCategoryID: local.categoryID,
-                fallbackCategoryID: remote.categoryID
+                fallbackCategoryID: SystemCategory.undefined.id
             )
-            if resolved.matchedUserRule {
+            if resolved.matchedCategoryRule {
                 categoryID = resolved.categoryID
+                categorySource = .rule
                 userEdited = true
-            } else if local.userEditedCategory {
+            } else if isUserSticky(local) {
+                // User edit always wins — including across bank description changes.
                 categoryID = local.categoryID
+                categorySource = local.categorySource == .user ? .user : (local.categorySource ?? .user)
                 userEdited = true
+            } else if remote.isPending {
+                // Pending stays unprocessed until posted (LLM / keyword run after post).
+                categoryID = SystemCategory.undefined.id
+                categorySource = nil
+                userEdited = false
+            } else if descriptionChanged {
+                categoryID = SystemCategory.undefined.id
+                categorySource = nil
+                userEdited = false
+            } else if isProcessedSticky(local) {
+                categoryID = local.categoryID
+                categorySource = effectiveProcessedSource(local)
+                userEdited = false
             } else {
-                categoryID = remote.categoryID
+                // Still Undefined / unprocessed — stay on Undefined until enrichment.
+                categoryID = SystemCategory.undefined.id
+                categorySource = nil
                 userEdited = false
             }
         }
@@ -141,7 +181,8 @@ public enum MergeSyncPolicy: Sendable {
             suppressedTagIDs: local.suppressedTagIDs,
             enrichedTitle: title,
             enrichedLocation: location,
-            titleSource: source
+            titleSource: source,
+            categorySource: categorySource
         )
     }
 
@@ -151,6 +192,39 @@ public enum MergeSyncPolicy: Sendable {
             return min(local.postedDate, remote.postedDate)
         }
         return remote.postedDate
+    }
+
+    private static func isUserSticky(_ local: Transaction) -> Bool {
+        if local.categorySource == .user { return true }
+        if local.userEditedCategory, local.categorySource != .rule, local.categorySource != .llm,
+           local.categorySource != .keyword
+        {
+            return true
+        }
+        // Compat: sticky bool without source, and not a rule-stamped row we can tell apart.
+        if local.userEditedCategory, local.categorySource == nil {
+            return true
+        }
+        return false
+    }
+
+    private static func isProcessedSticky(_ local: Transaction) -> Bool {
+        if local.categorySource == .llm || local.categorySource == .keyword { return true }
+        if local.categorySource == .rule { return true }
+        // Legacy row with a real category and no Undefined marker.
+        if local.categoryID != SystemCategory.undefined.id,
+           local.categorySource == nil,
+           !local.userEditedCategory
+        {
+            return true
+        }
+        return false
+    }
+
+    private static func effectiveProcessedSource(_ local: Transaction) -> CategorySource? {
+        if let source = local.categorySource { return source }
+        if local.categoryID != SystemCategory.undefined.id { return .keyword }
+        return nil
     }
 
     private static func appliedEnrichment(

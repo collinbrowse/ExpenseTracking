@@ -44,6 +44,7 @@ struct MerchantParseMemoStoreTests {
             descriptionEnricher: enricher,
             categoryEnricher: StubMemoCategoryEnricher(),
             transactionRepository: txs,
+            accountRepository: EmptyAccountRepository(),
             ruleRepository: EmptyMemoRuleRepository(),
             memoStore: memo,
             workCoordinator: FoundationModelsWorkCoordinator()
@@ -134,7 +135,7 @@ private actor CountingDescriptionEnricher: TransactionDescriptionEnriching {
 }
 
 private struct StubMemoCategoryEnricher: TransactionCategoryEnriching {
-    func suggestCategory(description: String, amount: Decimal) async -> CategoryID? { nil }
+    func suggestCategory(_ request: CategorySuggestionRequest) async -> CategoryID? { nil }
 }
 
 private struct EmptyMemoRuleRepository: CategorizationRuleRepository {
@@ -184,6 +185,8 @@ private final class MockMemoTransactionRepository: TransactionRepository, @unche
         needing.removeAll { $0.id == transactionID }
     }
     func fetchAllForCategorization() async throws -> [Transaction] { needing }
+    func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction] { [] }
+    func countNeedingCategorySuggestion() async throws -> Int { 0 }
     func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws {}
     func countNeedingEnrichment() async throws -> Int { needing.count }
     func countDistinctDescriptionsNeedingEnrichment() async throws -> Int {
@@ -193,3 +196,9 @@ private final class MockMemoTransactionRepository: TransactionRepository, @unche
         Array(needing.prefix(limit))
     }
 }
+
+private struct EmptyAccountRepository: AccountRepository {
+    func fetchAll() async throws -> [Account] { [] }
+    func updateName(accountID: AccountID, name: String) async throws {}
+}
+

@@ -115,7 +115,8 @@ public actor DemoBankLinkingService: BankLinkingServing {
                     postedDate: paycheckDate,
                     description: "Payroll ACME Corp",
                     isPending: false,
-                    suggestedCategoryID: SystemCategory.income.id
+                    suggestedCategoryID: SystemCategory.income.id,
+                    preferSuggestedCategory: true
                 )
             )
         }
@@ -142,7 +143,8 @@ public actor DemoBankLinkingService: BankLinkingServing {
                 postedDate: date,
                 description: template.0,
                 isPending: false,
-                suggestedCategoryID: template.1.id
+                suggestedCategoryID: template.1.id,
+                preferSuggestedCategory: true
             )
             if index % 3 != 0 {
                 checkingTx.append(snapshot)

@@ -89,6 +89,7 @@ public actor SyncCoordinator: SyncServing {
         let context = ModelContext(modelContainer)
         guard let connection = try? fetchConnection(context: context) else { return nil }
         let untitled = (try? countNeedingEnrichment(context: context)) ?? 0
+        let undefined = (try? countUndefined(context: context)) ?? 0
         let total = (try? countPosted(context: context)) ?? 0
         let distinct = (try? countDistinctNeedingEnrichment(context: context)) ?? 0
         let complete = connection.historyComplete || connection.historyBackfillComplete
@@ -98,6 +99,7 @@ public actor SyncCoordinator: SyncServing {
             historyComplete: complete,
             lastBackfillAdvanceAt: connection.lastBackfillAdvanceAt,
             untitledCount: untitled,
+            undefinedCount: undefined,
             totalPostedCount: total,
             distinctMerchantLookupsRemaining: distinct
         )
@@ -354,6 +356,16 @@ public actor SyncCoordinator: SyncServing {
 
     private func countNeedingEnrichment(context: ModelContext) throws -> Int {
         try EnrichmentBacklogQuery.count(context: context)
+    }
+
+    private func countUndefined(context: ModelContext) throws -> Int {
+        let undefinedID = SystemCategory.undefined.id.rawValue
+        let descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate {
+                !$0.isPending && $0.categoryID == undefinedID && !$0.categoryLocked
+            }
+        )
+        return try context.fetchCount(descriptor)
     }
 
     private func countPosted(context: ModelContext) throws -> Int {

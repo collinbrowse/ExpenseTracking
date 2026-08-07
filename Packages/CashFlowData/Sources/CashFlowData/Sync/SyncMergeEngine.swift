@@ -175,7 +175,12 @@ enum SyncMergeEngine {
 
         if let existing = try context.fetch(descriptor).first {
             let local = EntityMappers.transaction(from: existing)
-            let merged = MergeSyncPolicy.merge(local: local, remote: remoteDomain, rules: rules)
+            let merged = MergeSyncPolicy.merge(
+                local: local,
+                remote: remoteDomain,
+                rules: rules,
+                preferSuggestedCategory: remote.preferSuggestedCategory
+            )
             existing.amount = merged.amount
             existing.postedDate = merged.postedDate
             existing.transactionDescription = merged.description
@@ -189,10 +194,16 @@ enum SyncMergeEngine {
             existing.enrichedTitle = merged.enrichedTitle
             existing.enrichedLocation = merged.enrichedLocation
             existing.titleSourceRaw = EntityMappers.titleSourceRaw(from: merged.titleSource)
+            existing.categorySourceRaw = EntityMappers.categorySourceRaw(from: merged.categorySource)
             existing.suppressedTagIDsData = try EntityMappers.encodeTagIDs(merged.suppressedTagIDs)
             try applyTags(merged.tagIDs, to: existing, context: context)
         } else {
-            let merged = MergeSyncPolicy.merge(local: nil, remote: remoteDomain, rules: rules)
+            let merged = MergeSyncPolicy.merge(
+                local: nil,
+                remote: remoteDomain,
+                rules: rules,
+                preferSuggestedCategory: remote.preferSuggestedCategory
+            )
             let entity = TransactionEntity(
                 id: UUID().uuidString,
                 externalID: remote.externalID,
@@ -210,6 +221,7 @@ enum SyncMergeEngine {
                 enrichedTitle: merged.enrichedTitle,
                 enrichedLocation: merged.enrichedLocation,
                 titleSourceRaw: EntityMappers.titleSourceRaw(from: merged.titleSource),
+                categorySourceRaw: EntityMappers.categorySourceRaw(from: merged.categorySource),
                 suppressedTagIDsData: try EntityMappers.encodeTagIDs(merged.suppressedTagIDs)
             )
             context.insert(entity)

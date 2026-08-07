@@ -190,8 +190,8 @@ struct MergeSyncPolicyTests {
         #expect(merged.userEditedCategory == true)
     }
 
-    @Test("Without user edit, remote category wins")
-    func remoteCategoryWins() {
+    @Test("Without user edit, description change resets to Undefined")
+    func descriptionChangeResetsCategory() {
         let account = AccountID("a")
         let local = Transaction(
             id: TransactionID("t1"),
@@ -201,7 +201,8 @@ struct MergeSyncPolicyTests {
             postedDate: Date(timeIntervalSince1970: 100),
             description: "old",
             categoryID: SystemCategory.dining.id,
-            userEditedCategory: false
+            userEditedCategory: false,
+            categorySource: .llm
         )
         let remote = Transaction(
             id: TransactionID("t1"),
@@ -213,8 +214,9 @@ struct MergeSyncPolicyTests {
             categoryID: SystemCategory.income.id
         )
         let merged = MergeSyncPolicy.merge(local: local, remote: remote)
-        #expect(merged.categoryID == SystemCategory.income.id)
+        #expect(merged.categoryID == SystemCategory.undefined.id)
         #expect(merged.userEditedCategory == false)
+        #expect(merged.amount == 20)
     }
 
     @Test("Pending re-sync keeps earlier posted date")

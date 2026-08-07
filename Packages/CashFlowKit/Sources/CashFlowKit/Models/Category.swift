@@ -50,6 +50,8 @@ public enum SystemCategory: String, Sendable, CaseIterable {
     case feesCharges
     case medical
     case other
+    /// Unprocessed marker until LLM (or keyword fallback) assigns a real category.
+    case undefined
 
     public var id: CategoryID { CategoryID(rawValue) }
 
@@ -72,6 +74,7 @@ public enum SystemCategory: String, Sendable, CaseIterable {
         case .feesCharges: "Fees & Charges"
         case .medical: "Medical"
         case .other: "Other"
+        case .undefined: "Undefined"
         }
     }
 
@@ -81,7 +84,7 @@ public enum SystemCategory: String, Sendable, CaseIterable {
         case .hidden, .transfer, .creditCardPayment: .excluded
         case .groceries, .dining, .transport, .shopping, .bills, .entertainment,
              .rentMortgage, .travelVacation, .healthFitness, .businessServices,
-             .feesCharges, .medical, .other:
+             .feesCharges, .medical, .other, .undefined:
             .expense
         }
     }

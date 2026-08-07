@@ -51,8 +51,14 @@ public protocol TransactionRepository: Sendable {
     /// Batch title/location restore for rule undo.
     func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws
 
-    /// Posted (non-pending) transactions for rule re-apply. Not for list UI pagination.
+    /// Posted transactions for rule re-apply. Not for list UI pagination.
     func fetchAllForCategorization() async throws -> [Transaction]
+
+    /// Posted Undefined rows needing an initial LLM/keyword category (newest first).
+    func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction]
+
+    /// Count of posted Undefined transactions still awaiting initial categorization.
+    func countNeedingCategorySuggestion() async throws -> Int
 
     /// Posted transactions missing enrichment cache (for post-sync enrichment).
     func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction]

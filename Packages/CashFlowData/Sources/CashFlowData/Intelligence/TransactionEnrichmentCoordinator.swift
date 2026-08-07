@@ -1,17 +1,21 @@
 import Foundation
 import CashFlowKit
 
-/// Post-sync enrichment: merchant/location cache, then optional LLM categories.
+/// Post-sync enrichment: merchant/location cache, then initial LLM categories (Undefined backlog).
 public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
     public static let descriptionBatchLimit = 12
     public static let categoryBatchLimit = 12
     public static let incrementalRowBudget = 48
     public static let incrementalTimeBudgetSeconds: TimeInterval = 30
+    /// Dedicated window for initial Undefined→LLM/keyword work after titles.
+    public static let incrementalCategoryTimeBudgetSeconds: TimeInterval = 30
+    public static let incrementalCategoryRowBudget = 24
 
     private let availability: any OnDeviceModelAvailabilityChecking
     private let descriptionEnricher: any TransactionDescriptionEnriching
     private let categoryEnricher: any TransactionCategoryEnriching
     private let transactionRepository: any TransactionRepository
+    private let accountRepository: any AccountRepository
     private let ruleRepository: any CategorizationRuleRepository
     private let memoStore: MerchantParseMemoStore?
     private let workCoordinator: FoundationModelsWorkCoordinator
@@ -23,6 +27,7 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
         descriptionEnricher: any TransactionDescriptionEnriching,
         categoryEnricher: any TransactionCategoryEnriching,
         transactionRepository: any TransactionRepository,
+        accountRepository: any AccountRepository,
         ruleRepository: any CategorizationRuleRepository,
         memoStore: MerchantParseMemoStore? = nil,
         workCoordinator: FoundationModelsWorkCoordinator
@@ -31,6 +36,7 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
         self.descriptionEnricher = descriptionEnricher
         self.categoryEnricher = categoryEnricher
         self.transactionRepository = transactionRepository
+        self.accountRepository = accountRepository
         self.ruleRepository = ruleRepository
         self.memoStore = memoStore
         self.workCoordinator = workCoordinator
@@ -44,19 +50,48 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
     ) async -> EnrichmentWorkEstimate? {
         guard !fullDrainRunning else { return nil }
 
-        // Count first so empty stores / already-titled rows never touch Foundation Models.
         let untitled = (try? await transactionRepository.countNeedingEnrichment()) ?? 0
         let distinct = (try? await transactionRepository.countDistinctDescriptionsNeedingEnrichment()) ?? 0
+        let undefined = (try? await transactionRepository.countNeedingCategorySuggestion()) ?? 0
         let estimate = EnrichmentWorkEstimate(
             untitledCount: untitled,
-            distinctMerchantLookups: distinct
+            distinctMerchantLookups: distinct,
+            undefinedCount: undefined
         )
         if skipIfLargeBacklog, estimate.shouldPrompt {
             return estimate
         }
-        guard untitled > 0 else { return nil }
-        guard await availability.availability() == .available else { return nil }
-        guard !(await workCoordinator.isAssetsUnavailable) else { return nil }
+        guard untitled > 0 || undefined > 0 else { return nil }
+
+        let availabilityState = await availability.availability()
+        let assetsUnavailable = await workCoordinator.isAssetsUnavailable
+        let modelsAvailable = availabilityState == .available && !assetsUnavailable
+        // Category keyword fallback still runs when models are unavailable; LLM needs availability.
+        if untitled > 0, !modelsAvailable {
+            // Still try keyword categorization for Undefined rows.
+            await enrichCategories(
+                unlimited: false,
+                started: Date(),
+                timeBudgetSeconds: Self.incrementalCategoryTimeBudgetSeconds,
+                rowsBudgetRemaining: Self.incrementalCategoryRowBudget,
+                onProgress: onProgress,
+                completedSoFar: 0,
+                forceKeywordOnly: true
+            )
+            return nil
+        }
+        if untitled == 0, !modelsAvailable {
+            await enrichCategories(
+                unlimited: false,
+                started: Date(),
+                timeBudgetSeconds: Self.incrementalCategoryTimeBudgetSeconds,
+                rowsBudgetRemaining: Self.incrementalCategoryRowBudget,
+                onProgress: onProgress,
+                completedSoFar: 0,
+                forceKeywordOnly: true
+            )
+            return nil
+        }
 
         _ = await drain(
             unlimited: false,
@@ -74,9 +109,7 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
         guard !fullDrainRunning else { return .interrupted }
         fullDrainRunning = true
         defer { fullDrainRunning = false }
-        // Explicit user/Settings drain: allow retry after a prior catalog failure.
         await workCoordinator.clearAssetsUnavailableCooldown()
-        // If Apple still has us cooling down, wait here so we don't skip the first rows.
         _ = await workCoordinator.waitOutRateLimitPauseIfNeeded()
         return await drain(
             unlimited: true,
@@ -86,7 +119,6 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
         )
     }
 
-    /// Full drain with phase callbacks (cooling down vs running) for Settings / Live Activity.
     public func drainAllNeedingEnrichment(
         shouldContinue: @escaping @Sendable () -> Bool,
         onProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?,
@@ -111,20 +143,31 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
         onProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?,
         onPhase: (@Sendable (_ phase: EnrichmentProgress.Phase, _ detail: String?) -> Void)?
     ) async -> EnrichmentDrainOutcome {
-        // Claim the slot before the first `await` — actors are reentrant, so checking and
-        // setting across a suspension lets two drains run concurrently against one model.
         guard !isRunning else { return .interrupted }
         isRunning = true
         defer { isRunning = false }
 
-        guard await availability.availability() == .available else { return .interrupted }
-        guard !(await workCoordinator.isAssetsUnavailable) else { return .interrupted }
+        let availabilityState = await availability.availability()
+        let assetsUnavailable = await workCoordinator.isAssetsUnavailable
+        let modelsAvailable = availabilityState == .available && !assetsUnavailable
+        // Full Settings drain without models still applies keyword categories.
+        if !modelsAvailable {
+            let started = Date()
+            await enrichCategories(
+                unlimited: unlimited,
+                started: Date(),
+                timeBudgetSeconds: unlimited ? .infinity : Self.incrementalCategoryTimeBudgetSeconds,
+                rowsBudgetRemaining: unlimited ? Int.max : Self.incrementalCategoryRowBudget,
+                onProgress: onProgress,
+                completedSoFar: 0,
+                forceKeywordOnly: true
+            )
+            return .completed
+        }
 
         let started = Date()
         var completed = 0
         var rowsThisRun = 0
-        /// Rows we could not retire because the write failed. Without this the next
-        /// `fetchNeedingEnrichment` returns them again and the drain loops forever.
         var stuckIDs = Set<TransactionID>()
 
         while shouldContinue() {
@@ -132,7 +175,7 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
             if !unlimited {
                 if rowsThisRun >= Self.incrementalRowBudget { break }
                 if Date().timeIntervalSince(started) >= Self.incrementalTimeBudgetSeconds {
-                    return .completed
+                    break
                 }
             }
 
@@ -147,12 +190,12 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
             let needing = fetched.filter { !stuckIDs.contains($0.id) }
             guard !needing.isEmpty else { break }
 
-            // Count once per batch, then decrement locally. Counting per row was a
-            // full-table scan for every transaction in the backlog.
             var remaining = (try? await transactionRepository.countNeedingEnrichment())
                 ?? needing.count
             remaining = max(remaining - stuckIDs.count, needing.count)
-            let total = completed + remaining
+            let undefinedRemaining =
+                (try? await transactionRepository.countNeedingCategorySuggestion()) ?? 0
+            let total = completed + remaining + undefinedRemaining
             onProgress?(completed, total)
 
             for transaction in needing {
@@ -189,10 +232,8 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
                         stuckIDs.insert(transaction.id)
                     }
                 } else if attempt.exhaustedByRateLimit {
-                    // Only pause the whole drain when THIS row hit an unresolved rate limit.
                     return .interruptedByRateLimit
                 } else {
-                    // Unparseable this pass — leave raw text, drop from the backlog.
                     do {
                         try await transactionRepository.markEnrichmentSkipped(
                             transactionID: transaction.id
@@ -204,18 +245,30 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
                 completed += 1
                 rowsThisRun += 1
                 remaining = max(remaining - 1, 0)
-                onProgress?(completed, completed + remaining)
+                onProgress?(completed, completed + remaining + undefinedRemaining)
                 onPhase?(.running, nil)
             }
         }
 
-        // Incremental budget exhausted — stop without category pass this round.
-        if !unlimited, rowsThisRun >= Self.incrementalRowBudget {
-            return .completed
-        }
         guard !(await workCoordinator.isAssistantPriorityActive) else { return .interrupted }
-        guard !(await workCoordinator.isAssetsUnavailable) else { return .interrupted }
-        await enrichCategories(onProgress: onProgress, completedSoFar: completed)
+
+        // Category pass gets its own time/row budget so title work cannot starve Undefined rows.
+        let categoryBudget: Int
+        if unlimited {
+            categoryBudget = Int.max
+        } else {
+            categoryBudget = Self.incrementalCategoryRowBudget
+        }
+        let forceKeyword = assetsUnavailable || availabilityState != .available
+        await enrichCategories(
+            unlimited: unlimited,
+            started: Date(),
+            timeBudgetSeconds: unlimited ? .infinity : Self.incrementalCategoryTimeBudgetSeconds,
+            rowsBudgetRemaining: categoryBudget,
+            onProgress: onProgress,
+            completedSoFar: completed,
+            forceKeywordOnly: forceKeyword
+        )
         if unlimited {
             await workCoordinator.clearRateLimitPause()
         }
@@ -224,7 +277,6 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
 
     private struct DescriptionEnrichmentAttempt: Sendable {
         var parsed: ParsedTransactionDescription
-        /// True when cool-down retries were exhausted while still rate-limited.
         var exhaustedByRateLimit: Bool
     }
 
@@ -242,7 +294,6 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
         }
 
         var sawRateLimit = false
-        // Retry the same merchant across rate-limit cool-downs instead of skipping it.
         for _ in 0..<8 {
             guard shouldContinue() else {
                 return DescriptionEnrichmentAttempt(
@@ -259,7 +310,6 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
                 return DescriptionEnrichmentAttempt(parsed: parsed, exhaustedByRateLimit: false)
             }
             guard await workCoordinator.isRateLimitPaused else {
-                // Empty for a non-throttle reason (unsupported language, refused parse, etc.).
                 return DescriptionEnrichmentAttempt(parsed: parsed, exhaustedByRateLimit: false)
             }
             sawRateLimit = true
@@ -279,69 +329,113 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
     }
 
     private func enrichCategories(
+        unlimited: Bool,
+        started: Date,
+        timeBudgetSeconds: TimeInterval,
+        rowsBudgetRemaining: Int,
         onProgress: (@Sendable (_ completed: Int, _ total: Int) -> Void)?,
-        completedSoFar: Int
+        completedSoFar: Int,
+        forceKeywordOnly: Bool
     ) async {
-        let categoryTargets: [Transaction]
-        do {
-            categoryTargets = try await categoryTargetsNeedingSuggestion()
-        } catch {
-            return
-        }
-        guard !categoryTargets.isEmpty else { return }
+        let accounts = (try? await accountRepository.fetchAll()) ?? []
+        let accountsByID = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+        let rules = (try? await ruleRepository.fetchAll()) ?? []
 
         var completed = completedSoFar
-        var assignments: [CategoryAssignment] = []
-        assignments.reserveCapacity(categoryTargets.count)
+        var rowsUsed = 0
+        var skippedIDs = Set<TransactionID>()
 
-        for transaction in categoryTargets {
-            if await workCoordinator.isAssistantPriorityActive { break }
-            if await workCoordinator.isAssetsUnavailable { break }
-            let haystack = transaction.enrichedTitle ?? transaction.displayTitle
-            if let suggested = await categoryEnricher.suggestCategory(
-                description: haystack,
-                amount: transaction.amount
-            ),
-               suggested != transaction.categoryID,
-               transaction.categoryID == SystemCategory.other.id
+        while rowsUsed < rowsBudgetRemaining {
+            if !unlimited,
+               Date().timeIntervalSince(started) >= timeBudgetSeconds
             {
-                assignments.append(
-                    CategoryAssignment(
-                        transactionID: transaction.id,
-                        categoryID: suggested,
-                        userEditedCategory: false
-                    )
+                break
+            }
+            if await workCoordinator.isAssistantPriorityActive { break }
+
+            let batch: [Transaction]
+            do {
+                let fetched = try await transactionRepository.fetchNeedingCategorySuggestion(
+                    limit: Self.categoryBatchLimit + skippedIDs.count
                 )
+                batch = fetched.filter { !skippedIDs.contains($0.id) }
+            } catch {
+                return
             }
-            completed += 1
-            onProgress?(completed, completedSoFar + categoryTargets.count)
-        }
+            guard !batch.isEmpty else { break }
 
-        try? await transactionRepository.applyCategoryAssignments(assignments)
-    }
+            let stillNeeding =
+                (try? await transactionRepository.countNeedingCategorySuggestion()) ?? batch.count
+            var assignments: [CategoryAssignment] = []
+            assignments.reserveCapacity(batch.count)
 
-    private func categoryTargetsNeedingSuggestion() async throws -> [Transaction] {
-        let rules = try await ruleRepository.fetchAll()
-        let candidates = try await transactionRepository.fetchAllForCategorization()
-        var targets: [Transaction] = []
-        targets.reserveCapacity(Self.categoryBatchLimit)
+            for transaction in batch {
+                if rowsUsed >= rowsBudgetRemaining { break }
+                if await workCoordinator.isAssistantPriorityActive { break }
 
-        for transaction in candidates {
-            guard targets.count < Self.categoryBatchLimit else { break }
-            guard !transaction.categoryLocked else { continue }
-            guard !transaction.userEditedCategory else { continue }
-            guard transaction.categoryID == SystemCategory.other.id else { continue }
+                if transaction.userEditedCategory || transaction.categorySource == .user {
+                    skippedIDs.insert(transaction.id)
+                    continue
+                }
+                let matching = CategorizationRuleMatcher.matchingRules(
+                    rules,
+                    transaction: transaction
+                )
+                if matching.contains(where: \.appliesCategory) {
+                    skippedIDs.insert(transaction.id)
+                    continue
+                }
 
-            let matching = CategorizationRuleMatcher.matchingRules(
-                rules,
-                transaction: transaction
-            )
-            if matching.contains(where: \.appliesCategory) {
-                continue
+                let account = accountsByID[transaction.accountID]
+                let request = CategorySuggestionRequest(transaction: transaction, account: account)
+                let suggested: CategoryID
+                let source: CategorySource
+                if forceKeywordOnly {
+                    suggested = SuggestTransactionCategoryUseCase.execute(
+                        description: transaction.displayTitle,
+                        amount: transaction.amount
+                    )
+                    source = .keyword
+                } else if let llm = await categoryEnricher.suggestCategory(request),
+                          llm != SystemCategory.undefined.id
+                {
+                    suggested = llm
+                    source = .llm
+                } else {
+                    suggested = SuggestTransactionCategoryUseCase.execute(
+                        description: transaction.displayTitle,
+                        amount: transaction.amount
+                    )
+                    source = .keyword
+                }
+
+                if suggested != SystemCategory.undefined.id {
+                    assignments.append(
+                        CategoryAssignment(
+                            transactionID: transaction.id,
+                            categoryID: suggested,
+                            userEditedCategory: false,
+                            categorySource: source
+                        )
+                    )
+                } else {
+                    skippedIDs.insert(transaction.id)
+                }
+
+                rowsUsed += 1
+                completed += 1
+                let total = max(completed + max(stillNeeding - rowsUsed, 0), completed)
+                onProgress?(completed, total)
             }
-            targets.append(transaction)
+
+            if !assignments.isEmpty {
+                try? await transactionRepository.applyCategoryAssignments(assignments)
+            }
+            // Avoid spinning forever when every remaining row was skipped.
+            if assignments.isEmpty, batch.allSatisfy({ skippedIDs.contains($0.id) }) {
+                break
+            }
         }
-        return targets
     }
 }
 

@@ -116,7 +116,7 @@ final class SettingsViewModel {
     }
 
     var isTitleCleanupComplete: Bool {
-        !isCleaningUpTitles && historyStatus?.needsTitleCleanup != true
+        !isCleaningUpTitles && historyStatus?.needsCleanup != true
     }
 
     var showTitleCleanupProgress: Bool {
@@ -132,29 +132,35 @@ final class SettingsViewModel {
                 return "Waiting for Apple Intelligence…"
             }
             if cleanupTotal > 0 {
-                return "Cleaning titles… \(cleanupCompleted) of \(cleanupTotal)"
+                return "Improving transactions… \(cleanupCompleted) of \(cleanupTotal)"
             }
-            return "Cleaning titles…"
+            return "Improving transactions…"
         }
         guard let status = historyStatus else { return "—" }
-        if status.untitledCount == 0 {
+        if !status.needsCleanup {
             return finishedTitlesCopy
         }
         if isTitleCleanupPaused {
-            return "Paused · \(status.untitledCount) titles left"
+            return "Paused · \(status.untitledCount) titles · \(status.undefinedCount) undefined"
         }
         let lookups = status.distinctMerchantLookupsRemaining
+        if status.needsTitleCleanup, status.needsCategoryCleanup {
+            return "\(status.untitledCount) titles · \(status.undefinedCount) undefined · \(lookups) merchant lookups"
+        }
+        if status.needsCategoryCleanup {
+            return "\(status.undefinedCount) undefined categories left"
+        }
         return "\(status.untitledCount) titles left · \(lookups) merchant lookups"
     }
 
     var finishedTitlesCopy: String {
         switch ruleCount {
         case 0:
-            return "All titles processed"
+            return "All transactions processed"
         case 1:
-            return "All titles processed with your 1 rule applied"
+            return "All transactions processed with your 1 rule applied"
         default:
-            return "All titles processed with your \(ruleCount) rules applied"
+            return "All transactions processed with your \(ruleCount) rules applied"
         }
     }
 
@@ -187,13 +193,13 @@ final class SettingsViewModel {
     }
 
     var canCleanUpTitles: Bool {
-        historyStatus?.needsTitleCleanup == true
+        historyStatus?.needsCleanup == true
             && !isCleaningUpTitles
             && modelAvailability == .available
     }
 
     var titleCleanupActionTitle: String {
-        isTitleCleanupPaused ? "Resume" : "Clean up transaction titles"
+        isTitleCleanupPaused ? "Resume" : "Clean up transactions"
     }
 
     /// Shows a badge on the Settings tab while cleanup runs.
@@ -235,7 +241,7 @@ final class SettingsViewModel {
         if let lookback = historyStatus?.lookback {
             selectedLookback = lookback
         }
-        if historyStatus?.needsTitleCleanup != true {
+        if historyStatus?.needsCleanup != true {
             setTitleCleanupPaused(false)
         }
     }
@@ -264,7 +270,8 @@ final class SettingsViewModel {
         if expectedUntitled == nil {
             await reloadHistoryStatus(refreshTitleBacklog: true)
         }
-        let expected = expectedUntitled ?? historyStatus?.untitledCount ?? 0
+        let expected = expectedUntitled
+            ?? ((historyStatus?.untitledCount ?? 0) + (historyStatus?.undefinedCount ?? 0))
         guard expected > 0 else {
             setTitleCleanupPaused(false)
             return
@@ -318,7 +325,7 @@ final class SettingsViewModel {
             setTitleCleanupPaused(false)
             cleanupErrorMessage = nil
         case .interruptedByRateLimit, .interrupted:
-            setTitleCleanupPaused(historyStatus?.needsTitleCleanup == true)
+            setTitleCleanupPaused(historyStatus?.needsCleanup == true)
             cleanupErrorMessage = nil
         }
     }

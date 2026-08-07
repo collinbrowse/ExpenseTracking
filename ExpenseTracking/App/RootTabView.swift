@@ -195,9 +195,9 @@ struct RootTabView: View {
 
     private func continueEnrichmentDrain() {
         showEnrichmentPrompt = false
-        let expected = pendingEnrichmentEstimate?.untitledCount
+        let expected = pendingEnrichmentEstimate?.backlogCount
         Task {
-            // Same path as Settings → Clean up transaction titles.
+            // Same path as Settings → Clean up transactions.
             await settingsViewModel.startTitleCleanup(expectedUntitled: expected)
         }
     }
@@ -359,15 +359,15 @@ private struct EnrichmentPromptSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Clean up transaction titles?")
+                Text("Improve transactions?")
                     .font(.title2.bold())
                 if let estimate {
                     Text(
-                        "\(estimate.untitledCount) transactions still show raw bank text. About \(estimate.distinctMerchantLookups) unique merchants need a one-time lookup."
+                        "\(estimate.untitledCount) still show raw bank text and \(estimate.undefinedCount) need a category. About \(estimate.distinctMerchantLookups) unique merchants need a one-time lookup."
                     )
                     .foregroundStyle(.secondary)
                 }
-                Text("Cleanup uses on-device Apple Intelligence. Progress shows under Settings → Transaction Titles (and in the system indicator if you leave).")
+                Text("Cleanup uses on-device Apple Intelligence. Progress shows under Settings (and in the system indicator if you leave).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -378,7 +378,7 @@ private struct EnrichmentPromptSheet: View {
                     .frame(maxWidth: .infinity)
             }
             .padding()
-            .navigationTitle("Title Cleanup")
+            .navigationTitle("Transaction Cleanup")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium])

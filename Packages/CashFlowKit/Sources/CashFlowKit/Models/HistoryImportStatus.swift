@@ -36,7 +36,7 @@ public enum HistoryLookbackYears: Int, Hashable, Sendable, Codable, CaseIterable
     public static let `default`: HistoryLookbackYears = .two
 }
 
-/// Durable multi-day status for history backfill and title enrichment.
+/// Durable multi-day status for history backfill and title/category enrichment.
 public struct HistoryImportStatus: Equatable, Sendable {
     public let lookback: HistoryLookbackYears
     public let earliestFetchedDate: Date?
@@ -44,6 +44,7 @@ public struct HistoryImportStatus: Equatable, Sendable {
     public let historyComplete: Bool
     public let lastBackfillAdvanceAt: Date?
     public let untitledCount: Int
+    public let undefinedCount: Int
     public let totalPostedCount: Int
     public let distinctMerchantLookupsRemaining: Int
 
@@ -54,6 +55,7 @@ public struct HistoryImportStatus: Equatable, Sendable {
         historyComplete: Bool,
         lastBackfillAdvanceAt: Date?,
         untitledCount: Int,
+        undefinedCount: Int = 0,
         totalPostedCount: Int,
         distinctMerchantLookupsRemaining: Int
     ) {
@@ -63,6 +65,7 @@ public struct HistoryImportStatus: Equatable, Sendable {
         self.historyComplete = historyComplete
         self.lastBackfillAdvanceAt = lastBackfillAdvanceAt
         self.untitledCount = untitledCount
+        self.undefinedCount = undefinedCount
         self.totalPostedCount = totalPostedCount
         self.distinctMerchantLookupsRemaining = distinctMerchantLookupsRemaining
     }
@@ -85,14 +88,18 @@ public struct HistoryImportStatus: Equatable, Sendable {
 
     public var needsTitleCleanup: Bool { untitledCount > 0 }
 
+    public var needsCategoryCleanup: Bool { undefinedCount > 0 }
+
+    public var needsCleanup: Bool { needsTitleCleanup || needsCategoryCleanup }
+
     public var isStalled: Bool {
-        guard !historyComplete || needsTitleCleanup else { return false }
+        guard !historyComplete || needsCleanup else { return false }
         guard let last = lastBackfillAdvanceAt else { return false }
         return Date.now.timeIntervalSince(last) > 48 * 60 * 60
     }
 
     public var continuationCopy: String {
-        if historyComplete && !needsTitleCleanup {
+        if historyComplete && !needsCleanup {
             return "Up to date"
         }
         if isStalled {
@@ -106,7 +113,7 @@ public struct HistoryImportStatus: Equatable, Sendable {
         return formatter.string(from: earliestFetchedDate)
     }
 
-    /// Keeps the idle "N titles left" snapshot while refreshing bank-history fields.
+    /// Keeps the idle title/category backlog snapshot while refreshing bank-history fields.
     public func preservingTitleBacklog(from other: HistoryImportStatus) -> HistoryImportStatus {
         HistoryImportStatus(
             lookback: lookback,
@@ -115,6 +122,7 @@ public struct HistoryImportStatus: Equatable, Sendable {
             historyComplete: historyComplete,
             lastBackfillAdvanceAt: lastBackfillAdvanceAt,
             untitledCount: other.untitledCount,
+            undefinedCount: other.undefinedCount,
             totalPostedCount: other.totalPostedCount,
             distinctMerchantLookupsRemaining: other.distinctMerchantLookupsRemaining
         )
@@ -128,6 +136,7 @@ public enum HistoryImportStatusBuilding: Sendable {
         historyComplete: Bool,
         lastBackfillAdvanceAt: Date?,
         untitledCount: Int,
+        undefinedCount: Int = 0,
         totalPostedCount: Int,
         distinctMerchantLookupsRemaining: Int,
         now: Date = .now
@@ -139,6 +148,7 @@ public enum HistoryImportStatusBuilding: Sendable {
             historyComplete: historyComplete,
             lastBackfillAdvanceAt: lastBackfillAdvanceAt,
             untitledCount: untitledCount,
+            undefinedCount: undefinedCount,
             totalPostedCount: totalPostedCount,
             distinctMerchantLookupsRemaining: distinctMerchantLookupsRemaining
         )

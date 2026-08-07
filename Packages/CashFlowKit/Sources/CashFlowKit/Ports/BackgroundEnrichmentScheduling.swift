@@ -57,13 +57,21 @@ extension BackgroundEnrichmentScheduling {
 public struct EnrichmentWorkEstimate: Equatable, Sendable {
     public let untitledCount: Int
     public let distinctMerchantLookups: Int
+    public let undefinedCount: Int
 
-    public init(untitledCount: Int, distinctMerchantLookups: Int) {
+    public init(
+        untitledCount: Int,
+        distinctMerchantLookups: Int,
+        undefinedCount: Int = 0
+    ) {
         self.untitledCount = untitledCount
         self.distinctMerchantLookups = distinctMerchantLookups
+        self.undefinedCount = undefinedCount
     }
 
     public static let promptThreshold = 50
 
-    public var shouldPrompt: Bool { untitledCount > Self.promptThreshold }
+    public var backlogCount: Int { untitledCount + undefinedCount }
+
+    public var shouldPrompt: Bool { backlogCount > Self.promptThreshold }
 }

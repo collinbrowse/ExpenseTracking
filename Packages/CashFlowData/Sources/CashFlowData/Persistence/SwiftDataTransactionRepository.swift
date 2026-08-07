@@ -75,6 +75,7 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         entity.categoryID = categoryID.rawValue
         entity.userEditedCategory = true
         entity.categoryLocked = categoryLocked
+        entity.categorySourceRaw = CategorySource.user.rawValue
         try context.save()
     }
 
@@ -128,8 +129,24 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
         let entities = try context.fetch(descriptor)
         for entity in entities {
             guard let assignment = byID[entity.id] else { continue }
+            if entity.categoryLocked { continue }
+            let existing = EntityMappers.categorySource(from: entity.categorySourceRaw)
+            let incoming = assignment.categorySource
+                ?? (assignment.userEditedCategory ? CategorySource.user : nil)
+            if let incoming,
+               !CategorySource.canOverwrite(existing: existing, with: incoming)
+            {
+                continue
+            }
             entity.categoryID = assignment.categoryID.rawValue
             entity.userEditedCategory = assignment.userEditedCategory
+            if let source = assignment.categorySource {
+                entity.categorySourceRaw = source.rawValue
+            } else if assignment.userEditedCategory {
+                entity.categorySourceRaw = CategorySource.user.rawValue
+            } else {
+                entity.categorySourceRaw = nil
+            }
         }
         try context.save()
     }
@@ -240,6 +257,30 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
             predicate: #Predicate { !$0.isPending }
         )
         return try context.fetch(descriptor).map(EntityMappers.transaction(from:))
+    }
+
+    public func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction] {
+        let context = ModelContext(modelContainer)
+        let undefinedID = SystemCategory.undefined.id.rawValue
+        var descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate {
+                !$0.isPending && $0.categoryID == undefinedID && !$0.categoryLocked
+            },
+            sortBy: [SortDescriptor(\.postedDate, order: .reverse)]
+        )
+        descriptor.fetchLimit = max(0, limit)
+        return try context.fetch(descriptor).map(EntityMappers.transaction(from:))
+    }
+
+    public func countNeedingCategorySuggestion() async throws -> Int {
+        let context = ModelContext(modelContainer)
+        let undefinedID = SystemCategory.undefined.id.rawValue
+        let descriptor = FetchDescriptor<TransactionEntity>(
+            predicate: #Predicate {
+                !$0.isPending && $0.categoryID == undefinedID && !$0.categoryLocked
+            }
+        )
+        return try context.fetchCount(descriptor)
     }
 
     public func fetchNeedingEnrichment(limit: Int) async throws -> [Transaction] {

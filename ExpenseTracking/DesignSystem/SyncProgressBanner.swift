@@ -15,9 +15,9 @@ enum SyncProgressFormatting {
             return "Saving updates…"
         case .enriching:
             if let total = progress.totalUnits, total > 0 {
-                return "Improving labels… \(progress.completedUnits) of \(total)"
+                return "Improving transactions… \(progress.completedUnits) of \(total)"
             }
-            return "Improving labels…"
+            return "Improving transactions…"
         case .backfillingHistory:
             if let total = progress.totalUnits, total > 0 {
                 return "Importing history… \(progress.completedUnits) of \(total)"
