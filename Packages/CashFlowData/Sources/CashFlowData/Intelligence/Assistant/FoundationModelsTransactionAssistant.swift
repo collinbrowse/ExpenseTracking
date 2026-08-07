@@ -282,6 +282,7 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
             guard let before = beforeByID[id], let after = afterByID[id] else { return false }
             return before.categoryID != after.categoryID
                 || before.userEditedCategory != after.userEditedCategory
+                || before.categorySource != after.categorySource
                 || Set(before.tagIDs) != Set(after.tagIDs)
                 || before.enrichedTitle != after.enrichedTitle
                 || before.enrichedLocation != after.enrichedLocation
@@ -343,7 +344,6 @@ public actor IntentHostTransactionAssistant: TransactionAssistantServing {
                 return CategoryAssignment(
                     transactionID: tx.id,
                     categoryID: proposal.categoryID,
-                    userEditedCategory: true,
                     categorySource: .user
                 )
             }

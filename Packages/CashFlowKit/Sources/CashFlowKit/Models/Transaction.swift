@@ -26,6 +26,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let description: String
     public let categoryID: CategoryID
     public let currencyCode: String
+    /// Derived sticky compat for `.user` / `.rule` — not an independent authorship writer.
+    /// Prefer `effectiveCategorySource` / `CategorySource.isUserEditedCompat` for new logic.
     public let userEditedCategory: Bool
     public let isPending: Bool
     /// When true, user categorization rules never change this transaction’s category.
@@ -40,7 +42,7 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let enrichedLocation: String?
     /// Who authored the enrichment fields. Nil when no enrichment is present.
     public let titleSource: TitleSource?
-    /// Who authored `categoryID`. Nil on legacy rows (treat as keyword / unprocessed).
+    /// Who authored `categoryID`. Nil on unprocessed / legacy rows (see `effectiveCategorySource`).
     public let categorySource: CategorySource?
 
     public init(
@@ -127,6 +129,23 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public var category: Category {
         SystemCategory.category(for: categoryID)
     }
+
+    /// Authorship for sticky / overwrite decisions, including legacy dual-flag backfill.
+    /// - Explicit `categorySource` wins when present.
+    /// - Legacy sticky: `userEditedCategory && categorySource == nil` → `.user`.
+    /// - Legacy processed: real category, no source, not sticky → `.keyword`.
+    /// - Else `nil` (unprocessed / Undefined).
+    public var effectiveCategorySource: CategorySource? {
+        if let categorySource { return categorySource }
+        if userEditedCategory { return .user }
+        if categoryID != SystemCategory.undefined.id { return .keyword }
+        return nil
+    }
+
+    /// Sticky compat derived from `effectiveCategorySource`.
+    public var derivedUserEditedCategory: Bool {
+        effectiveCategorySource?.isUserEditedCompat ?? false
+    }
 }
 
 /// Batch category write for rule re-apply (not list pagination).
@@ -146,6 +165,18 @@ public struct CategoryAssignment: Hashable, Sendable {
         self.categoryID = categoryID
         self.userEditedCategory = userEditedCategory
         self.categorySource = categorySource
+    }
+
+    /// Source-first factory: derives sticky bool from `CategorySource.isUserEditedCompat`.
+    public init(
+        transactionID: TransactionID,
+        categoryID: CategoryID,
+        categorySource: CategorySource?
+    ) {
+        self.transactionID = transactionID
+        self.categoryID = categoryID
+        self.categorySource = categorySource
+        self.userEditedCategory = categorySource?.isUserEditedCompat ?? false
     }
 }
 

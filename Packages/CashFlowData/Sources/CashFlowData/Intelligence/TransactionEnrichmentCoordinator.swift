@@ -373,7 +373,7 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
                 if rowsUsed >= rowsBudgetRemaining { break }
                 if await workCoordinator.isAssistantPriorityActive { break }
 
-                if transaction.userEditedCategory || transaction.categorySource == .user {
+                if transaction.effectiveCategorySource == .user {
                     skippedIDs.insert(transaction.id)
                     continue
                 }
@@ -414,7 +414,6 @@ public actor TransactionEnrichmentCoordinator: TransactionEnrichmentRunning {
                         CategoryAssignment(
                             transactionID: transaction.id,
                             categoryID: suggested,
-                            userEditedCategory: false,
                             categorySource: source
                         )
                     )

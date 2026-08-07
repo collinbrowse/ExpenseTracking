@@ -28,6 +28,7 @@ final class DependencyContainer {
     let transactionAssistant: any TransactionAssistantServing
     let categorizationRuleDrafting: any CategorizationRuleDrafting
     let backgroundEnrichment: any BackgroundEnrichmentScheduling
+    let localDataExport: any LocalDataExporting
     let useLargeDemoSeed: Bool
 
     /// Launch-safe: SwiftData load/migration failures wipe and fall back; never fails for disk issues.
@@ -153,5 +154,6 @@ final class DependencyContainer {
             workCoordinator: workCoordinator
         )
         self.backgroundEnrichment = background
+        self.localDataExport = LocalJSONExporter(modelContainer: modelContainer)
     }
 }

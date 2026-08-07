@@ -3,6 +3,7 @@ import CashFlowKit
 
 struct InsightsView: View {
     @Bindable var viewModel: InsightsViewModel
+    var onViewTransactions: (_ categoryID: CategoryID?, _ tagID: TagID?) -> Void = { _, _ in }
     @State private var isComposingTag = false
     @State private var selectedCategoryRowID: String?
     @State private var selectedTagRowID: String?
@@ -44,6 +45,19 @@ struct InsightsView: View {
                     categorySection
 
                     tagSection
+
+                    if viewModel.hasExpenseData {
+                        Button {
+                            let categoryID = selectedCategoryRowID.map { CategoryID($0) }
+                            let tagID = selectedTagRowID.map { TagID($0) }
+                            onViewTransactions(categoryID, tagID)
+                        } label: {
+                            Label("View transactions", systemImage: "list.bullet")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("insights.viewTransactions")
+                    }
 
                     manageTagsButton
                 }

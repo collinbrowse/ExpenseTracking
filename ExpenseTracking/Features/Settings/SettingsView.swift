@@ -142,12 +142,44 @@ struct SettingsView: View {
                 LabeledContent("Build", value: viewModel.appBuild)
             }
             Section("Data") {
-                Text("Transaction data is stored on this device. Deleting the app removes local data; reconnect to sync again.")
+                Button {
+                    Task { await viewModel.exportLocalData() }
+                } label: {
+                    if viewModel.isExporting {
+                        HStack {
+                            ProgressView()
+                            Text("Exporting…")
+                        }
+                    } else {
+                        Label("Export JSON…", systemImage: "square.and.arrow.up")
+                    }
+                }
+                .disabled(viewModel.isExporting)
+                .accessibilityIdentifier("settings.exportJSON")
+
+                if let message = viewModel.exportErrorMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+
+                Text("Transaction data is stored on this device. Deleting the app removes local data; reconnect to sync again. Export creates a portable backup without bank credentials.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: Binding(
+            get: { viewModel.exportFileURL != nil },
+            set: { if !$0 { viewModel.clearExportShare() } }
+        )) {
+            if let url = viewModel.exportFileURL {
+                ShareLink(item: url) {
+                    Label("Share Export", systemImage: "square.and.arrow.up")
+                }
+                .presentationDetents([.medium])
+            }
+        }
         .task {
             viewModel.startObservingEnrichmentProgress()
             await viewModel.reloadHistoryStatus()

@@ -108,6 +108,7 @@ struct CategorizationRulesPersistenceTests {
         let lockedAfter = try #require(refreshed.first { $0.id == "t-locked" })
         #expect(unlockedAfter.categoryID == SystemCategory.dining.id.rawValue)
         #expect(unlockedAfter.userEditedCategory == true)
+        #expect(unlockedAfter.categorySourceRaw == CategorySource.rule.rawValue)
         #expect(lockedAfter.categoryID == SystemCategory.hidden.id.rawValue)
     }
 

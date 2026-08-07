@@ -8,7 +8,7 @@
 | Data unit/integration | `Packages/CashFlowData/Tests` | Sync, merge, demo net, pagination/filter mapping |
 | App / ViewModel | `ExpenseTrackingTests` | UI state orchestration (e.g. Home load, amount search) |
 | Architecture script | `scripts/check_architecture.sh` | Every PR / push (CI) |
-| UI smoke | Simulator + accessibility IDs | Release candidates |
+| UI smoke | `ExpenseTrackingUITests` (Demo happy path) + Simulator accessibility IDs | Every PR / push (CI) + release candidates |
 
 ## Commands
 

@@ -458,6 +458,7 @@ struct MergeSyncPolicyRulesTests {
         let merged = MergeSyncPolicy.merge(local: local, remote: remote, rules: [rule])
         #expect(merged.categoryID == SystemCategory.dining.id)
         #expect(merged.userEditedCategory == true)
+        #expect(merged.categorySource == .rule)
     }
 
     @Test("Without rule match, user-edited category still wins")

@@ -12,8 +12,13 @@ Personal MVP; no multi-device sync; delete-app may wipe data.
 
 SwiftData is the source of truth on device. Schema uses `VersionedSchema` v1 + `SchemaMigrationPlan`. The home-screen widget reads the shared App Group SwiftData store live (`WidgetNetCashFlowLoader`) for its configured time frame; leftover `NetSnapshotStore` JSON is cleared on full wipe.
 
+`CashFlowSchemaV1` is the frozen live store shape: additive fields with defaults only. Breaking changes need a distinct V2 + migration stage. Wipe-on-load-failure in `ModelContainerFactory` is a last resort (it clears app + widget data together).
+
+Local **JSON export** (`LocalDataExporting` / `LocalJSONExporter`) is a portable snapshot with its own `formatVersion` — no Keychain secrets, no LLM memo cache. Cloud backup / multi-device sync remain out of scope.
+
 ## Consequences
 
 - Fast iteration, strong privacy story
-- No cloud backup in MVP (export deferred)
-- Re-link / Sync Now / Reset are first-class recovery paths
+- Device-local JSON export for backup before risky resets or schema work
+- Re-link / Sync Now / Reset remain first-class recovery paths
+- Widget and app share one store — migrations and wipes affect both

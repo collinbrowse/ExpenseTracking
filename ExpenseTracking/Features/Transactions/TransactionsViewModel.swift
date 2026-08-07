@@ -23,15 +23,21 @@ final class TransactionsViewModel {
     private let accountRepository: any AccountRepository
     private let tagRepository: any TagRepository
     private let syncServing: any SyncServing
-    private let ruleRepository: any CategorizationRuleRepository
-    private let ruleApplying: any CategorizationRuleApplying
-    private let ruleDrafting: (any CategorizationRuleDrafting)?
-    private let availabilityChecker: (any OnDeviceModelAvailabilityChecking)?
+
+    let editor: TransactionEditorSession
 
     var rows: [TransactionRowModel] = []
-    var accounts: [Account] = []
-    var tags: [CashFlowKit.Tag] = []
-    var searchText = ""
+    var accounts: [Account] = [] {
+        didSet { syncEditorCaches() }
+    }
+    var tags: [CashFlowKit.Tag] = [] {
+        didSet { syncEditorCaches() }
+    }
+    var searchText = "" {
+        didSet {
+            scheduleSearchReload()
+        }
+    }
     var filterAccountID: AccountID?
     var filterCategoryID: CategoryID?
     var filterTagID: TagID?
@@ -44,27 +50,78 @@ final class TransactionsViewModel {
     var hasMore = true
     var bannerMessage: String?
     var syncProgress: SyncProgress?
-    var selectedTransactionID: TransactionID?
-    var editingDescription = ""
-    var editingCategoryID: CategoryID = SystemCategory.other.id
-    var editingCategoryLocked = false
-    var editingTagIDs: Set<TagID> = []
-    var editingAccountName = ""
-    var editingLocation = ""
-    var editingAmountText = ""
-    var editingAmountIsIncome = false
-    var editingRawDescription = ""
-    var newTagName = ""
-    var matchingRules: [CategorizationRule] = []
-    var showRuleEditor = false
-    var ruleEditor: CategorizationRuleEditorViewModel?
-    var isSavingEdits = false
+
+    var selectedTransactionID: TransactionID? {
+        get { editor.selectedTransactionID }
+        set { editor.selectedTransactionID = newValue }
+    }
+    var editingDescription: String {
+        get { editor.editingDescription }
+        set { editor.editingDescription = newValue }
+    }
+    var editingCategoryID: CategoryID {
+        get { editor.editingCategoryID }
+        set { editor.editingCategoryID = newValue }
+    }
+    var editingCategoryLocked: Bool {
+        get { editor.editingCategoryLocked }
+        set { editor.editingCategoryLocked = newValue }
+    }
+    var editingTagIDs: Set<TagID> {
+        get { editor.editingTagIDs }
+        set { editor.editingTagIDs = newValue }
+    }
+    var editingAccountName: String {
+        get { editor.editingAccountName }
+        set { editor.editingAccountName = newValue }
+    }
+    var editingLocation: String {
+        get { editor.editingLocation }
+        set { editor.editingLocation = newValue }
+    }
+    var editingAmountText: String {
+        get { editor.editingAmountText }
+        set { editor.editingAmountText = newValue }
+    }
+    var editingAmountIsIncome: Bool {
+        get { editor.editingAmountIsIncome }
+        set { editor.editingAmountIsIncome = newValue }
+    }
+    var editingRawDescription: String {
+        get { editor.editingRawDescription }
+        set { editor.editingRawDescription = newValue }
+    }
+    var newTagName: String {
+        get { editor.newTagName }
+        set { editor.newTagName = newValue }
+    }
+    var matchingRules: [CategorizationRule] {
+        get { editor.matchingRules }
+        set { editor.matchingRules = newValue }
+    }
+    var showRuleEditor: Bool {
+        get { editor.showRuleEditor }
+        set { editor.showRuleEditor = newValue }
+    }
+    var ruleEditor: CategorizationRuleEditorViewModel? {
+        get { editor.ruleEditor }
+        set { editor.ruleEditor = newValue }
+    }
+    var isSavingEdits: Bool {
+        get { editor.isSavingEdits }
+        set { editor.isSavingEdits = newValue }
+    }
 
     private var cursor: TransactionCursor?
     private var loadTask: Task<Void, Never>?
-    private var accountNames: [AccountID: String] = [:]
-    private var tagNames: [TagID: String] = [:]
-    private var matchingRulesTask: Task<Void, Never>?
+    private var searchReloadTask: Task<Void, Never>?
+    private var appliedSearchQuery: String?
+    private var accountNames: [AccountID: String] = [:] {
+        didSet { syncEditorCaches() }
+    }
+    private var tagNames: [TagID: String] = [:] {
+        didSet { syncEditorCaches() }
+    }
     private var syncProgressTask: Task<Void, Never>?
 
     init(
@@ -81,10 +138,39 @@ final class TransactionsViewModel {
         self.accountRepository = accountRepository
         self.tagRepository = tagRepository
         self.syncServing = syncServing
-        self.ruleRepository = ruleRepository
-        self.ruleApplying = ruleApplying
-        self.ruleDrafting = ruleDrafting
-        self.availabilityChecker = availabilityChecker
+        let editor = TransactionEditorSession(
+            transactionRepository: transactionRepository,
+            accountRepository: accountRepository,
+            tagRepository: tagRepository,
+            ruleRepository: ruleRepository,
+            ruleApplying: ruleApplying,
+            ruleDrafting: ruleDrafting,
+            availabilityChecker: availabilityChecker
+        )
+        self.editor = editor
+        editor.listRow = { [weak self] id in self?.rows.first(where: { $0.id == id }) }
+        editor.applyListRow = { [weak self] row in
+            guard let self, let index = self.rows.firstIndex(where: { $0.id == row.id }) else { return }
+            self.rows[index] = row
+        }
+        editor.removeListRow = { [weak self] id in
+            self?.rows.removeAll { $0.id == id }
+        }
+        editor.reloadList = { [weak self] in
+            await self?.resetAndLoad()
+        }
+        editor.filterCategoryID = { [weak self] in self?.filterCategoryID }
+        editor.filterTagID = { [weak self] in self?.filterTagID }
+        editor.presentBanner = { [weak self] message in
+            self?.bannerMessage = message
+        }
+    }
+
+    private func syncEditorCaches() {
+        editor.accounts = accounts
+        editor.tags = tags
+        editor.accountNames = accountNames
+        editor.tagNames = tagNames
     }
 
     var filter: TransactionFilter {
@@ -95,7 +181,8 @@ final class TransactionsViewModel {
                 customEnd: customEnd
             ),
             categoryID: filterCategoryID,
-            tagID: filterTagID
+            tagID: filterTagID,
+            searchQuery: appliedSearchQuery
         )
     }
 
@@ -142,19 +229,8 @@ final class TransactionsViewModel {
         return chips
     }
 
-    var displayedRows: [TransactionRowModel] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return rows }
-        return rows.filter { row in
-            row.title.localizedCaseInsensitiveContains(query)
-                || row.location?.localizedCaseInsensitiveContains(query) == true
-                || row.rawDescription.localizedCaseInsensitiveContains(query)
-                || row.categoryText.localizedCaseInsensitiveContains(query)
-                || row.tagText?.localizedCaseInsensitiveContains(query) == true
-                || row.accountName.localizedCaseInsensitiveContains(query)
-                || TransactionAmountSearch.matches(query, amountText: row.amountText)
-        }
-    }
+    /// Rows already filtered by the repository (including search).
+    var displayedRows: [TransactionRowModel] { rows }
 
     /// Pending section first (when present), then month sections newest → oldest.
     var sections: [TransactionMonthSection] {
@@ -190,6 +266,23 @@ final class TransactionsViewModel {
     }
 
     private var hasLoadedOnce = false
+
+    private func scheduleSearchReload() {
+        guard hasLoadedOnce else { return }
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = trimmed.isEmpty ? nil : trimmed
+        guard next != appliedSearchQuery else { return }
+        searchReloadTask?.cancel()
+        searchReloadTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(280))
+            guard !Task.isCancelled, let self else { return }
+            let latest = self.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let applied = latest.isEmpty ? nil : latest
+            guard applied != self.appliedSearchQuery else { return }
+            self.appliedSearchQuery = applied
+            await self.resetAndLoad()
+        }
+    }
 
     func onAppear() async {
         startObservingSyncProgress()
@@ -333,68 +426,7 @@ final class TransactionsViewModel {
     }
 
     func openEditor(for id: TransactionID) {
-        selectedTransactionID = id
-        newTagName = ""
-        if let row = rows.first(where: { $0.id == id }) {
-            applyEditorFields(from: row)
-        }
-        Task {
-            // Load tags before matching rules so the Tags section is populated
-            // when the medium detent sheet appears.
-            await refreshTags()
-            // Prefer store state over a possibly stale list row (e.g. after Assistant).
-            await hydrateEditorFromStore(id: id)
-            await refreshMatchingRules()
-            await reapplyIfCategoryOutOfSync(for: id)
-        }
-    }
-
-    /// If an unlocked row matches a categorize rule but still has another category,
-    /// re-run rules so the editor reflects what the rule engine would apply.
-    private func reapplyIfCategoryOutOfSync(for id: TransactionID) async {
-        guard !editingCategoryLocked,
-              let rule = matchingRules.first(where: \.appliesCategory),
-              rule.categoryID != editingCategoryID
-        else { return }
-        do {
-            _ = try await ruleApplying.reapplyAllRules()
-            await hydrateEditorFromStore(id: id)
-            await refreshMatchingRules()
-        } catch {
-            // Leave the editor on the hydrated snapshot; Save can still persist manual edits.
-        }
-    }
-
-    private func applyEditorFields(from row: TransactionRowModel) {
-        editingDescription = row.title
-        editingCategoryID = row.categoryID
-        editingCategoryLocked = row.categoryLocked
-        editingTagIDs = Set(row.tagIDs)
-        editingAccountName = row.accountName
-        editingLocation = row.location ?? ""
-        editingAmountText = row.amountText
-        editingAmountIsIncome = row.amountIsIncome
-        editingRawDescription = row.rawDescription
-    }
-
-    private func hydrateEditorFromStore(id: TransactionID) async {
-        do {
-            let transactions = try await transactionRepository.fetchAllForCategorization()
-            guard let transaction = transactions.first(where: { $0.id == id }) else { return }
-            let row = TransactionRowModel(
-                transaction: transaction,
-                accountName: accountNames[transaction.accountID]
-                    ?? accounts.first(where: { $0.id == transaction.accountID })?.name
-                    ?? "Account",
-                tagNamesByID: tagNames
-            )
-            applyEditorFields(from: row)
-            if let index = rows.firstIndex(where: { $0.id == id }) {
-                rows[index] = row
-            }
-        } catch {
-            // Keep the list-row snapshot already applied in openEditor.
-        }
+        editor.open(for: id)
     }
 
     /// Call when the Transactions tab becomes active so newly created Insights tags appear.
@@ -403,212 +435,49 @@ final class TransactionsViewModel {
     }
 
     func toggleEditingTag(_ tagID: TagID) {
-        if editingTagIDs.contains(tagID) {
-            editingTagIDs.remove(tagID)
-        } else {
-            editingTagIDs.insert(tagID)
-        }
+        editor.toggleEditingTag(tagID)
     }
 
     func createTagFromEditor() async {
-        let name = newTagName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        do {
-            let tag = try await tagRepository.create(name: name)
-            newTagName = ""
-            await refreshTags()
-            // Ensure the new tag is visible even if fetch is briefly stale.
-            if !tags.contains(where: { $0.id == tag.id }) {
-                tags.append(tag)
-                tags.sort {
-                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
-                tagNames[tag.id] = tag.name
-            }
-            editingTagIDs.insert(tag.id)
-        } catch {
-            bannerMessage = CashFlowError.userFacingMessage(
-                for: error,
-                fallback: "Couldn't create tag."
-            )
-        }
+        await editor.createTagFromEditor()
+        tags = editor.tags
+        tagNames = editor.tagNames
     }
 
     func presentCreateRule() {
-        ruleEditor = CategorizationRuleEditorViewModel(
-            ruleRepository: ruleRepository,
-            ruleApplying: ruleApplying,
-            accountRepository: accountRepository,
-            tagRepository: tagRepository,
-            ruleDrafting: ruleDrafting,
-            availabilityChecker: availabilityChecker,
-            prefillTitle: editingDescription,
-            prefillCategoryID: editingCategoryID
-        )
-        showRuleEditor = true
+        editor.presentCreateRule()
     }
 
     func presentEditRule(_ rule: CategorizationRule) {
-        ruleEditor = CategorizationRuleEditorViewModel(
-            ruleRepository: ruleRepository,
-            ruleApplying: ruleApplying,
-            accountRepository: accountRepository,
-            tagRepository: tagRepository,
-            ruleDrafting: ruleDrafting,
-            availabilityChecker: availabilityChecker,
-            existing: rule
-        )
-        showRuleEditor = true
+        editor.presentEditRule(rule)
     }
 
     func handleRuleEditorDismissed() async {
-        let saved = ruleEditor?.didSave == true
-        ruleEditor = nil
-        guard saved else { return }
-        let editingID = selectedTransactionID
-        await resetAndLoad()
-        if let editingID, let row = rows.first(where: { $0.id == editingID }) {
-            // Rule re-apply may have renamed/categorized — keep the open editor in sync
-            // so Save doesn’t write the pre-rule title back over the rename.
-            editingDescription = row.title
-            editingCategoryID = row.categoryID
-            editingCategoryLocked = row.categoryLocked
-            editingTagIDs = Set(row.tagIDs)
-            editingAccountName = row.accountName
-            editingLocation = row.location ?? ""
-        }
-        await refreshMatchingRules()
+        await editor.handleRuleEditorDismissed()
     }
 
     func scheduleMatchingRulesRefresh() {
-        matchingRulesTask?.cancel()
-        matchingRulesTask = Task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
-            await refreshMatchingRules()
-        }
+        editor.scheduleMatchingRulesRefresh()
     }
 
     func refreshMatchingRules() async {
-        guard let id = selectedTransactionID,
-              let row = rows.first(where: { $0.id == id })
-        else {
-            matchingRules = []
-            return
-        }
-        let probe = Transaction(
-            id: row.id,
-            accountID: row.accountID,
-            externalID: row.id.rawValue,
-            amount: row.amount,
-            postedDate: .now,
-            description: row.rawDescription,
-            categoryID: editingCategoryID,
-            categoryLocked: editingCategoryLocked,
-            tagIDs: Array(editingTagIDs),
-            enrichedTitle: editingDescription,
-            enrichedLocation: editingLocation.isEmpty ? nil : editingLocation,
-            titleSource: .user
-        )
-        do {
-            let rules = try await ruleRepository.fetchAll()
-            matchingRules = CategorizationRuleMatcher.matchingRules(rules, transaction: probe)
-        } catch {
-            matchingRules = []
-        }
+        await editor.refreshMatchingRules()
     }
 
     func ruleSummary(for rule: CategorizationRule) -> String {
-        CategorizationConditionFormatting.summary(
-            for: rule.conditions,
-            accountName: { [self] accountID in
-                accountNames[accountID]
-                    ?? accounts.first(where: { $0.id == accountID })?.name
-                    ?? "Account"
-            },
-            tagName: { [self] tagID in
-                tagNames[tagID] ?? "Tag"
-            }
-        )
+        editor.ruleSummary(for: rule)
     }
 
     func ruleTitle(for rule: CategorizationRule) -> String {
-        if rule.appliesCategory {
-            return SystemCategory.category(for: rule.categoryID).name
-        }
-        if let renameTitle = rule.renameTitle {
-            return "Rename to “\(renameTitle)”"
-        }
-        return "Rename"
+        editor.ruleTitle(for: rule)
     }
 
     func ruleAppliesBadge(for rule: CategorizationRule) -> String? {
-        let isWinningCategory = rule.appliesCategory
-            && matchingRules.first(where: \.appliesCategory)?.id == rule.id
-        let isWinningRename = rule.renameTitle != nil
-            && matchingRules.first(where: { $0.renameTitle != nil })?.id == rule.id
-        if isWinningCategory && isWinningRename { return "Applies" }
-        if isWinningCategory { return "Category" }
-        if isWinningRename { return "Rename" }
-        return nil
+        editor.ruleAppliesBadge(for: rule)
     }
 
     func saveEdits() async {
-        guard let id = selectedTransactionID,
-              let index = rows.firstIndex(where: { $0.id == id })
-        else { return }
-        let trimmedTitle = editingDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty else { return }
-        let trimmedLocation = editingLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-        let newCategoryID = editingCategoryID
-        let locked = editingCategoryLocked
-        let newTagIDs = Array(editingTagIDs).sorted { $0.rawValue < $1.rawValue }
-        isSavingEdits = true
-        defer { isSavingEdits = false }
-        do {
-            try await transactionRepository.updateCategory(
-                transactionID: id,
-                categoryID: newCategoryID,
-                categoryLocked: locked
-            )
-            try await transactionRepository.updateEnrichment(
-                transactionID: id,
-                title: trimmedTitle,
-                location: trimmedLocation.isEmpty ? nil : trimmedLocation,
-                source: .user,
-                clearLocation: trimmedLocation.isEmpty
-            )
-            try await transactionRepository.updateTags(
-                transactionID: id,
-                tagIDs: newTagIDs
-            )
-            selectedTransactionID = nil
-            editingLocation = ""
-
-            // Active filters no longer match — drop just this row.
-            if let filterCategoryID, filterCategoryID != newCategoryID {
-                rows.remove(at: index)
-                return
-            }
-            if let filterTagID, !newTagIDs.contains(filterTagID) {
-                rows.remove(at: index)
-                return
-            }
-
-            rows[index] = rows[index].replacing(
-                title: trimmedTitle,
-                location: trimmedLocation.isEmpty ? nil : trimmedLocation,
-                categoryID: newCategoryID,
-                categoryLocked: locked,
-                tagIDs: newTagIDs,
-                tagNamesByID: tagNames
-            )
-        } catch {
-            bannerMessage = CashFlowError.userFacingMessage(
-                for: error,
-                fallback: "Couldn't save changes."
-            )
-        }
+        await editor.saveEdits()
     }
 
     private func refreshAccounts() async {
@@ -627,10 +496,10 @@ final class TransactionsViewModel {
             tags = try await tagRepository.fetchAll()
             tagNames = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0.name) })
         } catch {
-            // Keep prior tags on transient fetch failure so editor doesn't go empty.
             if tags.isEmpty {
                 tagNames = [:]
             }
         }
+        syncEditorCaches()
     }
 }

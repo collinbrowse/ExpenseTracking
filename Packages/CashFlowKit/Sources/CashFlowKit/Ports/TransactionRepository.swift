@@ -1,6 +1,9 @@
 import Foundation
 
-public protocol TransactionRepository: Sendable {
+// MARK: - Segregated transaction ports (ISP)
+
+/// Keyset list + Home/Insights range fetches.
+public protocol TransactionListing: Sendable {
     func fetchPage(
         filter: TransactionFilter,
         cursor: TransactionCursor?,
@@ -14,7 +17,10 @@ public protocol TransactionRepository: Sendable {
 
     /// Oldest non-pending posted date, if any. Used to gate long Home ranges honestly.
     func earliestPostedDate() async throws -> Date?
+}
 
+/// Single-row edits from the transaction editor.
+public protocol TransactionMutating: Sendable {
     func updateCategory(
         transactionID: TransactionID,
         categoryID: CategoryID,
@@ -26,12 +32,6 @@ public protocol TransactionRepository: Sendable {
         transactionID: TransactionID,
         tagIDs: [TagID]
     ) async throws
-
-    /// Store-wide write for categorization rule re-apply. Not for list UI.
-    func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws
-
-    /// Store-wide tag membership replace for assistant confirm. Not for list UI.
-    func applyTagAssignments(_ assignments: [TagAssignment]) async throws
 
     /// Persists local-only merchant/location enrichment. Never mutates bank description.
     /// Honors `TitleSource` precedence: lower-ranked sources cannot overwrite higher.
@@ -47,13 +47,23 @@ public protocol TransactionRepository: Sendable {
     /// Marks a row as attempted-but-unparseable so it leaves the untitled backlog.
     /// Leaves `enrichedTitle` nil (UI keeps showing raw bank text).
     func markEnrichmentSkipped(transactionID: TransactionID) async throws
+}
+
+/// Store-wide categorization / assistant bulk writes. Not for list UI pagination.
+public protocol TransactionBulkWriting: Sendable {
+    func applyCategoryAssignments(_ assignments: [CategoryAssignment]) async throws
+
+    func applyTagAssignments(_ assignments: [TagAssignment]) async throws
 
     /// Batch title/location restore for rule undo.
     func applyTitleLocationAssignments(_ assignments: [TitleLocationAssignment]) async throws
 
-    /// Posted transactions for rule re-apply. Not for list UI pagination.
+    /// Posted transactions for rule re-apply / editor hydrate. Not for list UI pagination.
     func fetchAllForCategorization() async throws -> [Transaction]
+}
 
+/// Enrichment backlog queries used by post-sync / Settings drain.
+public protocol TransactionEnrichmentQuerying: Sendable {
     /// Posted Undefined rows needing an initial LLM/keyword category (newest first).
     func fetchNeedingCategorySuggestion(limit: Int) async throws -> [Transaction]
 
@@ -69,6 +79,9 @@ public protocol TransactionRepository: Sendable {
     /// Distinct normalized bank descriptions still lacking enrichment (memo-cache work units).
     func countDistinctDescriptionsNeedingEnrichment() async throws -> Int
 }
+
+/// Full transaction store surface — composition of listing, mutation, bulk, and enrichment ports.
+public protocol TransactionRepository: TransactionListing, TransactionMutating, TransactionBulkWriting, TransactionEnrichmentQuerying {}
 
 public protocol AccountRepository: Sendable {
     func fetchAll() async throws -> [Account]

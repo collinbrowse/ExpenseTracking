@@ -12,6 +12,8 @@ public struct ResolvedCategory: Equatable, Sendable {
     public let renameLocation: String?
     /// Tags to add from all matching rules, already excluding the transaction’s suppressed set.
     public let tagIDsToAdd: [TagID]
+    /// Authorship when a categorize rule matched (`.rule`); otherwise nil (caller keeps local).
+    public let categorySource: CategorySource?
 
     public init(
         categoryID: CategoryID,
@@ -19,7 +21,8 @@ public struct ResolvedCategory: Equatable, Sendable {
         matchedCategoryRule: Bool = false,
         renameTitle: String? = nil,
         renameLocation: String? = nil,
-        tagIDsToAdd: [TagID] = []
+        tagIDsToAdd: [TagID] = [],
+        categorySource: CategorySource? = nil
     ) {
         self.categoryID = categoryID
         self.matchedUserRule = matchedUserRule
@@ -27,6 +30,7 @@ public struct ResolvedCategory: Equatable, Sendable {
         self.renameTitle = renameTitle
         self.renameLocation = renameLocation
         self.tagIDsToAdd = tagIDsToAdd
+        self.categorySource = categorySource
     }
 
     public var hasRename: Bool {
@@ -73,14 +77,16 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
         let tagIDsToAdd = tagsToAdd(from: matching, suppressed: transaction.suppressedTagIDs)
 
         if categoryRule != nil || renameRule != nil {
+            let matchedCategory = categoryRule != nil
             let categoryID = categoryRule?.categoryID ?? currentCategoryID
             return ResolvedCategory(
                 categoryID: categoryID,
                 matchedUserRule: true,
-                matchedCategoryRule: categoryRule != nil,
+                matchedCategoryRule: matchedCategory,
                 renameTitle: renameRule?.renameTitle,
                 renameLocation: renameRule?.renameLocation,
-                tagIDsToAdd: tagIDsToAdd
+                tagIDsToAdd: tagIDsToAdd,
+                categorySource: matchedCategory ? .rule : nil
             )
         }
 
@@ -91,7 +97,8 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
                 matchedCategoryRule: false,
                 renameTitle: nil,
                 renameLocation: nil,
-                tagIDsToAdd: tagIDsToAdd
+                tagIDsToAdd: tagIDsToAdd,
+                categorySource: nil
             )
         }
 
@@ -102,7 +109,8 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
                 matchedCategoryRule: false,
                 renameTitle: nil,
                 renameLocation: nil,
-                tagIDsToAdd: tagIDsToAdd
+                tagIDsToAdd: tagIDsToAdd,
+                categorySource: nil
             )
         }
 
@@ -116,7 +124,8 @@ public enum ResolveTransactionCategoryUseCase: Sendable {
             matchedCategoryRule: false,
             renameTitle: nil,
             renameLocation: nil,
-            tagIDsToAdd: tagIDsToAdd
+            tagIDsToAdd: tagIDsToAdd,
+            categorySource: nil
         )
     }
 
