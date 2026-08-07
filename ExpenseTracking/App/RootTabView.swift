@@ -123,21 +123,7 @@ struct RootTabView: View {
             .tag(AppTab.transactions)
 
             NavigationStack {
-                InsightsView(
-                    viewModel: insightsViewModel,
-                    onViewTransactions: { categoryID, tagID, dateOption, start, end in
-                        Task {
-                            await transactionsViewModel.focusInsights(
-                                categoryID: categoryID,
-                                tagID: tagID,
-                                dateOption: dateOption,
-                                customStart: start,
-                                customEnd: end
-                            )
-                            selectedTab = .transactions
-                        }
-                    }
-                )
+                InsightsView(viewModel: insightsViewModel)
             }
             .tabItem { Label("Insights", systemImage: "chart.pie") }
             .tag(AppTab.insights)

@@ -141,7 +141,6 @@ struct HomeView: View {
             if !viewModel.result.dailyPoints.isEmpty {
                 NetCashFlowChartView(
                     points: viewModel.result.dailyPoints,
-                    accentPositive: viewModel.result.net >= 0,
                     rangeTitle: viewModel.rangeTitle,
                     endNet: viewModel.result.net,
                     animationToken: viewModel.chartAnimationToken
