@@ -150,7 +150,6 @@ final class InsightsViewModel {
             guard generation == reloadGeneration, !Task.isCancelled else { return }
 
             tags = fetchedTags
-            cachedTransactions = transactions
             applyBreakdown(transactions: transactions, tags: fetchedTags, range: range)
             bannerMessage = nil
         } catch is CancellationError {
