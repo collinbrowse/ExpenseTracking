@@ -121,17 +121,19 @@ final class DependencyContainer {
         let simpleFIN = SimpleFINBankLinkingService()
         let linking = CompositeBankLinkingService(demo: demo, simpleFIN: simpleFIN)
         self.bankLinking = linking
+        let widgetTimelineReloader = WidgetKitTimelineReloader()
         let snapshotStore = NetSnapshotStore()
         let sync = SyncCoordinator(
             modelContainer: modelContainer,
             bankLinking: linking,
-            snapshotStore: snapshotStore,
+            widgetTimelineReloader: widgetTimelineReloader,
             enrichment: enrichment
         )
         self.syncServing = sync
         let resetter = LocalDataResetter(
             modelContainer: modelContainer,
-            snapshotStore: snapshotStore
+            snapshotStore: snapshotStore,
+            widgetTimelineReloader: widgetTimelineReloader
         )
         self.resetter = resetter
         self.connectionLifecycle = ConnectionLifecycleService(

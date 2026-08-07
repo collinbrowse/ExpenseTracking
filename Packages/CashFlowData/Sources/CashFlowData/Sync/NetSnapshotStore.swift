@@ -1,7 +1,8 @@
 import Foundation
 import CashFlowKit
 
-/// Small App Group snapshot for widgets (falls back to Application Support when group is unavailable).
+/// Legacy App Group JSON handoff. Widget data is now loaded live from shared SwiftData;
+/// this store remains so full wipes can clear any leftover `net_snapshot.json`.
 public struct NetCashFlowSnapshot: Codable, Sendable, Equatable {
     public let net: Decimal
     public let incomeTotal: Decimal
@@ -33,6 +34,7 @@ public struct NetSnapshotStore: Sendable {
         self.appGroupID = appGroupID
     }
 
+    /// Kept for tests / leftover migration; the widget no longer reads this file.
     public func save(_ snapshot: NetCashFlowSnapshot) throws {
         let url = try resolvedFileURL(createDirectories: true)
         let data = try JSONEncoder().encode(snapshot)

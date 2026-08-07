@@ -67,7 +67,7 @@ Code: `ExpenseTracking/Features/Accounts/`, `Features/Settings/`
 - Re-locks after a fixed **15s** grace when leaving the app; quick switches do not re-prompt
 - Full-screen privacy cover while locked or backgrounded with lock enabled (app switcher)
 - Enabling / disabling requires a successful authentication challenge
-- Widget **unchanged** — This Month net still shows when lock is enabled
+- Widget **unchanged by lock** — configured time-frame net still shows when lock is enabled
 
 Code: `ExpenseTracking/Features/AppLock/`, `Features/Settings/`, `CashFlowData/SecureStorage/`
 
@@ -80,7 +80,7 @@ Code: `ExpenseTracking/Features/AppLock/`, `Features/Settings/`, `CashFlowData/S
 - Merge policy: **locked** category always kept; else matching **user rule** wins (even over manual edits); else **user-edited** category; else **LLM** (`.llm`); else **keyword** (`.keyword`); new rows start as **Undefined**. Account name: user-edited wins. Remote wins amount / date / description / balance / institution. Renames write `enrichedTitle` / `enrichedLocation` (bank description stays immutable). Bank description change resets non-user categories to Undefined for re-classification
 - Category suggestion: ingest → **Undefined**; post-sync LLM is the initial real category; keyword (`SuggestTransactionCategoryUseCase`) only when AI unavailable/`nil`; unmatched keyword credits → Other (not Income)
 - Demo provider for fixtures / portfolio; SimpleFIN for real institutions — **not coexisting in one store**
-- Widget snapshot written after successful sync; cleared on full wipe (`NetSnapshotStore`)
+- Widget timelines reloaded after successful sync and on full wipe (`WidgetTimelineReloading`)
 - Launch: single `VersionedSchema`; store load failures wipe App Group/local stores and retry, then in-memory — **no `fatalError` on SwiftData migration**
 
 Code: `Packages/CashFlowData/`
@@ -88,10 +88,13 @@ Code: `Packages/CashFlowData/`
 ### Widget
 
 - Small, medium, and accessory rectangular layouts
-- Shows **This Month** net + In/Out from the App Group JSON snapshot
-- Uses `StaticConfiguration` (an `OpenCashFlowIntent` type exists but is not wired into the widget UI yet)
+- Edit Widget time frame: **This Month** (default), **Last Month**, **Last 30 Days**, **Custom** (start/end)
+- Live net / +in / −out from shared App Group SwiftData via `WidgetNetCashFlowLoader` + `CalculateNetCashFlowUseCase`
+- Home reload and successful sync call `WidgetCenter.reloadTimelines` so each widget instance recomputes **its own** configured range (not Home’s selected range)
+- UI: one-line scaled signed net; green `+$` income row and red `−$` expense row (no `In · Out` bullet line)
+- Uses `AppIntentConfiguration` (`CashFlowWidgetConfigurationIntent`)
 
-Code: `ExpenseTrackingWidget/`
+Code: `ExpenseTrackingWidget/`, `Packages/CashFlowData` (`WidgetNetCashFlowLoader`), `Packages/CashFlowKit` (`WidgetCashFlowTimeFrame`)
 
 ### Quality gates
 
@@ -121,7 +124,7 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 | Transaction search | Client-side over **loaded pages only**, not a full-store query |
 | Edited description | Manual / rule titles stick when category is sticky (`userEditedCategory` / `.user`) or locked; otherwise bank description change clears enrichment and resets category to Undefined for re-classification |
 | Home date fetch | Posted txs for the range; date scoping may finish in memory when SwiftData predicates are fragile |
-| App Group | Widget prefers `group.com.expensetracking.shared`; falls back if signing/team/group isn’t set up |
+| App Group | Shared SwiftData + leftover snapshot cleanup use `group.com.expensetracking.shared`; widget shows empty state if the group container is unavailable |
 | Settings | About + privacy + Assistant + Categorization Rules + app lock |
 | Navigation helpers | `AppRouter` route enums exist but tabs use plain `NavigationStack`s |
 
@@ -162,4 +165,4 @@ Code: `CashFlowKit` ports + plan DTOs, `CashFlowData/Intelligence/`, `ExpenseTra
 4. Edit a category → Sync Now → category should stick (unless an unlocked matching rule applies)
 5. Settings → Categorization Rules → add a rule → matching unlocked txs update
 6. Edit a transaction → add a tag → Insights shows spend by that tag for the selected range
-7. Widget (after sync) reflects This Month snapshot when App Group is available
+7. Widget (Edit → pick a time frame) reflects live App Group totals after Home reload / sync

@@ -94,9 +94,22 @@ public enum ModelContainerFactory {
         ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
     }
 
+    /// Opens only the shared App Group store. Returns `nil` when the group is missing or
+    /// the store cannot load — never falls back to this process's Application Support
+    /// (that would show empty $0 instead of the app's data).
+    public static func makeSharedStoreIfAvailable(appGroupID: String) -> ModelContainer? {
+        guard isAppGroupAvailable(appGroupID) else { return nil }
+        let schema = Schema(versionedSchema: CashFlowSchemaV1.self)
+        return attemptLoad(
+            schema: schema,
+            configuration: appGroupConfiguration(schema: schema, appGroupID: appGroupID)
+        )
+    }
+
     /// `false` when the process lacks the App Group entitlement (unsigned CI / many test hosts).
-    static func isAppGroupAvailable(_ appGroupID: String) -> Bool {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil
+    public static func isAppGroupAvailable(_ appGroupID: String) -> Bool {
+        guard !appGroupID.isEmpty else { return false }
+        return FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil
     }
 
     /// Removes SwiftData/SQLite store files from App Group + local Application Support.

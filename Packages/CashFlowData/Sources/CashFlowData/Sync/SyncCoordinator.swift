@@ -15,7 +15,7 @@ public actor SyncCoordinator: SyncServing {
 
     private let modelContainer: ModelContainer
     private let bankLinking: CompositeBankLinkingService
-    private let snapshotStore: NetSnapshotStore
+    private let widgetTimelineReloader: any WidgetTimelineReloading
     private let enrichment: (any TransactionEnrichmentRunning)?
     nonisolated private let progressHub: SyncProgressHub
     private let logger = Logger(subsystem: "com.expensetracking", category: "sync")
@@ -26,13 +26,13 @@ public actor SyncCoordinator: SyncServing {
     public init(
         modelContainer: ModelContainer,
         bankLinking: CompositeBankLinkingService,
-        snapshotStore: NetSnapshotStore = NetSnapshotStore(),
+        widgetTimelineReloader: any WidgetTimelineReloading = NoOpWidgetTimelineReloader(),
         enrichment: (any TransactionEnrichmentRunning)? = nil,
         progressHub: SyncProgressHub = SyncProgressHub()
     ) {
         self.modelContainer = modelContainer
         self.bankLinking = bankLinking
-        self.snapshotStore = snapshotStore
+        self.widgetTimelineReloader = widgetTimelineReloader
         self.enrichment = enrichment
         self.progressHub = progressHub
     }
@@ -248,7 +248,7 @@ public actor SyncCoordinator: SyncServing {
             }
 
             try context.save()
-            try writeNetSnapshot(context: context)
+            widgetTimelineReloader.reloadCashFlowWidget()
 
             if let enrichment {
                 let estimate = await enrichment.enrichAfterSync(skipIfLargeBacklog: true) {
@@ -294,27 +294,6 @@ public actor SyncCoordinator: SyncServing {
             logger.error("Sync transport failure")
             throw CashFlowError.transport(message: error.localizedDescription)
         }
-    }
-
-    private func writeNetSnapshot(context: ModelContext) throws {
-        let range = CashFlowDateRange.month(.now)
-        let interval = range.interval()
-        let descriptor = FetchDescriptor<TransactionEntity>()
-        let entities = try context.fetch(descriptor)
-        let transactions = entities
-            .filter { !$0.isPending && $0.postedDate >= interval.start && $0.postedDate <= interval.end }
-            .map(EntityMappers.transaction(from:))
-        let result = CalculateNetCashFlowUseCase().execute(
-            transactions: transactions,
-            range: range
-        )
-        let snapshot = NetCashFlowSnapshot(
-            net: result.net,
-            incomeTotal: result.incomeTotal,
-            expenseTotal: result.expenseTotal,
-            rangeLabel: "This Month"
-        )
-        try? snapshotStore.save(snapshot)
     }
 
     private func fetchConnection(context: ModelContext) throws -> ConnectionEntity? {
