@@ -3,19 +3,6 @@ import Observation
 import CashFlowKit
 import CashFlowData
 
-struct ActiveFilterChip: Identifiable, Hashable, Sendable {
-    enum Kind: String, Hashable, Sendable {
-        case account
-        case date
-        case category
-        case tag
-    }
-
-    var id: Kind { kind }
-    let kind: Kind
-    let label: String
-}
-
 @MainActor
 @Observable
 final class TransactionsViewModel {
@@ -24,6 +11,7 @@ final class TransactionsViewModel {
     private let tagRepository: any TagRepository
     private let syncServing: any SyncServing
 
+    let filters: TransactionFilterSession
     let editor: TransactionEditorSession
 
     var rows: [TransactionRowModel] = []
@@ -33,23 +21,45 @@ final class TransactionsViewModel {
     var tags: [CashFlowKit.Tag] = [] {
         didSet { syncEditorCaches() }
     }
-    var searchText = "" {
-        didSet {
-            scheduleSearchReload()
-        }
-    }
-    var filterAccountID: AccountID?
-    var filterCategoryID: CategoryID?
-    var filterTagID: TagID?
-    var filterDateOption: TransactionDateFilterOption = .all
-    var customStart: Date = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
-    var customEnd: Date = .now
-    var showFilters = false
     var showCustomRange = false
     var isLoadingPage = false
     var hasMore = true
     var bannerMessage: String?
     var syncProgress: SyncProgress?
+
+    /// Convenience accessors for list bindings / chips.
+    var searchText: String {
+        get { filters.searchText }
+        set { filters.searchText = newValue }
+    }
+    var showFilters: Bool {
+        get { filters.showFiltersSheet }
+        set { filters.showFiltersSheet = newValue }
+    }
+    var filterAccountID: AccountID? {
+        get { filters.accountID }
+        set { filters.accountID = newValue }
+    }
+    var filterCategoryID: CategoryID? {
+        get { filters.categoryID }
+        set { filters.categoryID = newValue }
+    }
+    var filterTagID: TagID? {
+        get { filters.tagID }
+        set { filters.tagID = newValue }
+    }
+    var filterDateOption: TransactionDateFilterOption {
+        get { filters.dateOption }
+        set { filters.dateOption = newValue }
+    }
+    var customStart: Date {
+        get { filters.customStart }
+        set { filters.customStart = newValue }
+    }
+    var customEnd: Date {
+        get { filters.customEnd }
+        set { filters.customEnd = newValue }
+    }
 
     var selectedTransactionID: TransactionID? {
         get { editor.selectedTransactionID }
@@ -114,8 +124,6 @@ final class TransactionsViewModel {
 
     private var cursor: TransactionCursor?
     private var loadTask: Task<Void, Never>?
-    private var searchReloadTask: Task<Void, Never>?
-    private var appliedSearchQuery: String?
     private var accountNames: [AccountID: String] = [:] {
         didSet { syncEditorCaches() }
     }
@@ -123,8 +131,10 @@ final class TransactionsViewModel {
         didSet { syncEditorCaches() }
     }
     private var syncProgressTask: Task<Void, Never>?
+    private var lastHandledFilterRevision: UInt64 = 0
 
     init(
+        filters: TransactionFilterSession,
         transactionRepository: any TransactionRepository,
         accountRepository: any AccountRepository,
         tagRepository: any TagRepository,
@@ -134,6 +144,7 @@ final class TransactionsViewModel {
         ruleDrafting: (any CategorizationRuleDrafting)? = nil,
         availabilityChecker: (any OnDeviceModelAvailabilityChecking)? = nil
     ) {
+        self.filters = filters
         self.transactionRepository = transactionRepository
         self.accountRepository = accountRepository
         self.tagRepository = tagRepository
@@ -159,8 +170,8 @@ final class TransactionsViewModel {
         editor.reloadList = { [weak self] in
             await self?.resetAndLoad()
         }
-        editor.filterCategoryID = { [weak self] in self?.filterCategoryID }
-        editor.filterTagID = { [weak self] in self?.filterTagID }
+        editor.filterCategoryID = { [weak self] in self?.filters.categoryID }
+        editor.filterTagID = { [weak self] in self?.filters.tagID }
         editor.presentBanner = { [weak self] message in
             self?.bannerMessage = message
         }
@@ -173,60 +184,18 @@ final class TransactionsViewModel {
         editor.tagNames = tagNames
     }
 
-    var filter: TransactionFilter {
-        TransactionFilter(
-            accountID: filterAccountID,
-            dateRange: filterDateOption.dateRange(
-                customStart: customStart,
-                customEnd: customEnd
-            ),
-            categoryID: filterCategoryID,
-            tagID: filterTagID,
-            searchQuery: appliedSearchQuery
-        )
-    }
+    var filter: TransactionFilter { filters.filter }
 
-    var hasActiveFilters: Bool {
-        !activeFilterChips.isEmpty
-    }
+    var hasActiveFilters: Bool { filters.hasActiveFilters }
 
-    /// Visible summary of non-default filters (account / date / category).
+    /// Visible summary of non-default filters (account / date / category / tag).
     var activeFilterChips: [ActiveFilterChip] {
-        var chips: [ActiveFilterChip] = []
-        if let filterAccountID {
-            let name = accountNames[filterAccountID]
-                ?? accounts.first(where: { $0.id == filterAccountID })?.name
-                ?? "Account"
-            chips.append(ActiveFilterChip(kind: .account, label: name))
-        }
-        if filterDateOption != .all {
-            let label: String
-            if filterDateOption == .custom {
-                label = "\(DateFormatting.list(customStart)) – \(DateFormatting.list(customEnd))"
-            } else {
-                label = filterDateOption.title
-            }
-            chips.append(ActiveFilterChip(kind: .date, label: label))
-        }
-        if let filterCategoryID {
-            chips.append(
-                ActiveFilterChip(
-                    kind: .category,
-                    label: SystemCategory.category(for: filterCategoryID).name
-                )
-            )
-        }
-        if let filterTagID {
-            chips.append(
-                ActiveFilterChip(
-                    kind: .tag,
-                    label: tagNames[filterTagID]
-                        ?? tags.first(where: { $0.id == filterTagID })?.name
-                        ?? "Tag"
-                )
-            )
-        }
-        return chips
+        filters.activeFilterChips(
+            accountNames: accountNames,
+            accounts: accounts,
+            tagNames: tagNames,
+            tags: tags
+        )
     }
 
     /// Rows already filtered by the repository (including search).
@@ -267,23 +236,6 @@ final class TransactionsViewModel {
 
     private var hasLoadedOnce = false
 
-    private func scheduleSearchReload() {
-        guard hasLoadedOnce else { return }
-        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let next = trimmed.isEmpty ? nil : trimmed
-        guard next != appliedSearchQuery else { return }
-        searchReloadTask?.cancel()
-        searchReloadTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(280))
-            guard !Task.isCancelled, let self else { return }
-            let latest = self.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-            let applied = latest.isEmpty ? nil : latest
-            guard applied != self.appliedSearchQuery else { return }
-            self.appliedSearchQuery = applied
-            await self.resetAndLoad()
-        }
-    }
-
     func onAppear() async {
         startObservingSyncProgress()
         await refreshAccounts()
@@ -291,6 +243,16 @@ final class TransactionsViewModel {
         // Avoid resetting the list (and scroll position) every time the tab reappears.
         guard !hasLoadedOnce else { return }
         hasLoadedOnce = true
+        lastHandledFilterRevision = filters.revision
+        filters.enableSearchDebounce()
+        await resetAndLoad()
+    }
+
+    /// Reloads when the shared filter session changes (list or export UI).
+    func handleFilterRevisionChange() async {
+        guard hasLoadedOnce else { return }
+        guard filters.revision != lastHandledFilterRevision else { return }
+        lastHandledFilterRevision = filters.revision
         await resetAndLoad()
     }
 
@@ -304,20 +266,18 @@ final class TransactionsViewModel {
         }
     }
 
-    func applyFilters() async {
+    func applyFilters() {
         showFilters = false
-        await resetAndLoad()
     }
 
     /// Opens the list focused on one account (from Accounts tab).
     func focusAccount(_ accountID: AccountID) async {
-        filterAccountID = accountID
-        filterCategoryID = nil
-        filterTagID = nil
-        filterDateOption = .all
+        filters.focusAccount(accountID)
         await refreshAccounts()
         await refreshTags()
         hasLoadedOnce = true
+        filters.enableSearchDebounce()
+        lastHandledFilterRevision = filters.revision
         await resetAndLoad()
     }
 
@@ -329,38 +289,27 @@ final class TransactionsViewModel {
         customStart: Date,
         customEnd: Date
     ) async {
-        filterAccountID = nil
-        filterCategoryID = categoryID
-        filterTagID = tagID
-        filterDateOption = dateOption
-        self.customStart = customStart
-        self.customEnd = customEnd
+        filters.focusInsights(
+            categoryID: categoryID,
+            tagID: tagID,
+            dateOption: dateOption,
+            customStart: customStart,
+            customEnd: customEnd
+        )
         await refreshAccounts()
         await refreshTags()
         hasLoadedOnce = true
+        filters.enableSearchDebounce()
+        lastHandledFilterRevision = filters.revision
         await resetAndLoad()
     }
 
-    func clearFilter(_ kind: ActiveFilterChip.Kind) async {
-        switch kind {
-        case .account:
-            filterAccountID = nil
-        case .date:
-            filterDateOption = .all
-        case .category:
-            filterCategoryID = nil
-        case .tag:
-            filterTagID = nil
-        }
-        await resetAndLoad()
+    func clearFilter(_ kind: ActiveFilterChip.Kind) {
+        filters.clear(kind)
     }
 
-    func clearAllFilters() async {
-        filterAccountID = nil
-        filterCategoryID = nil
-        filterTagID = nil
-        filterDateOption = .all
-        await resetAndLoad()
+    func clearAllFilters() {
+        filters.clearAll()
     }
 
     func resetAndLoad() async {

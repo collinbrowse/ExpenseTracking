@@ -16,6 +16,7 @@ struct RootTabView: View {
 
     init(container: DependencyContainer) {
         self.container = container
+        let filters = TransactionFilterSession()
         _homeViewModel = State(
             initialValue: HomeViewModel(
                 transactionRepository: container.transactionRepository,
@@ -27,6 +28,7 @@ struct RootTabView: View {
         )
         _transactionsViewModel = State(
             initialValue: TransactionsViewModel(
+                filters: filters,
                 transactionRepository: container.transactionRepository,
                 accountRepository: container.accountRepository,
                 tagRepository: container.tagRepository,
@@ -60,6 +62,8 @@ struct RootTabView: View {
         _appLockViewModel = State(initialValue: lock)
         _settingsViewModel = State(
             initialValue: SettingsViewModel(
+                filters: filters,
+                transactionRepository: container.transactionRepository,
                 ruleRepository: container.categorizationRuleRepository,
                 ruleApplying: container.categorizationRuleApplying,
                 accountRepository: container.accountRepository,

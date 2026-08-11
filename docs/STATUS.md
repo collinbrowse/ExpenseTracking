@@ -82,7 +82,7 @@ Code: `ExpenseTracking/Features/AppLock/`, `Features/Settings/`, `CashFlowData/S
 - Demo provider for fixtures / portfolio; SimpleFIN for real institutions — **not coexisting in one store**
 - Widget timelines reloaded after successful sync and on full wipe (`WidgetTimelineReloading`)
 - Launch: single `VersionedSchema`; store load failures wipe App Group/local stores and retry, then in-memory — **no `fatalError` on SwiftData migration**
-- **JSON export** (Settings → Data): portable snapshot of accounts, transactions, tags, rules, and connection metadata via `LocalDataExporting` — no Keychain secrets
+- **CSV export** (Settings → Data): filtered transaction CSV via `LocalDataExporting` using the shared `TransactionFilterSession` (same filters as the Transactions list) — no Keychain secrets
 
 Code: `Packages/CashFlowData/`
 

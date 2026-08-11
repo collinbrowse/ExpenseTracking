@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Segregated transaction ports (ISP)
-
 /// Keyset list + Home/Insights range fetches.
 public protocol TransactionListing: Sendable {
     func fetchPage(
@@ -10,6 +8,10 @@ public protocol TransactionListing: Sendable {
         limit: Int
     ) async throws -> TransactionPage
 
+    /// Walks the keyset until exhausted — for CSV export and other full-filter reads.
+    /// Default implementation pages via `fetchPage`.
+    func fetchAllMatching(filter: TransactionFilter) async throws -> [Transaction]
+
     func fetchPosted(
         in range: CashFlowDateRange,
         now: Date
@@ -17,6 +19,24 @@ public protocol TransactionListing: Sendable {
 
     /// Oldest non-pending posted date, if any. Used to gate long Home ranges honestly.
     func earliestPostedDate() async throws -> Date?
+}
+
+public extension TransactionListing {
+    func fetchAllMatching(filter: TransactionFilter) async throws -> [Transaction] {
+        var items: [Transaction] = []
+        var cursor: TransactionCursor?
+        while true {
+            let page = try await fetchPage(
+                filter: filter,
+                cursor: cursor,
+                limit: TransactionPageSize.default
+            )
+            items.append(contentsOf: page.items)
+            guard let next = page.nextCursor else { break }
+            cursor = next
+        }
+        return items
+    }
 }
 
 /// Single-row edits from the transaction editor.

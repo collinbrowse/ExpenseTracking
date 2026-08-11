@@ -1,7 +1,7 @@
 import Foundation
 
-/// Full local ledger snapshot as UTF-8 JSON. Not for list UI.
-/// Omits Keychain credentials and regenerable LLM memo cache.
+/// Filtered transaction CSV export. Omits Keychain credentials.
 public protocol LocalDataExporting: Sendable {
-    func exportJSON() async throws -> Data
+    /// UTF-8 CSV of transactions matching `filter` (same semantics as the Transactions list).
+    func exportCSV(filter: TransactionFilter) async throws -> Data
 }

@@ -170,6 +170,6 @@ final class DependencyContainer {
             workCoordinator: workCoordinator
         )
         self.backgroundEnrichment = background
-        self.localDataExport = LocalJSONExporter(modelContainer: modelContainer)
+        self.localDataExport = LocalCSVExporter(modelContainer: modelContainer)
     }
 }

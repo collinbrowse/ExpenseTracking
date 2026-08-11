@@ -14,7 +14,7 @@ SwiftData is the source of truth on device. Schema uses `VersionedSchema` v1 + `
 
 `CashFlowSchemaV1` is the frozen live store shape: additive fields with defaults only. Breaking changes need a distinct V2 + migration stage. Wipe-on-load-failure in `ModelContainerFactory` is a last resort (it clears app + widget data together).
 
-Local **JSON export** (`LocalDataExporting` / `LocalJSONExporter`) is a portable snapshot with its own `formatVersion` — no Keychain secrets, no LLM memo cache. Cloud backup / multi-device sync remain out of scope.
+Local **CSV export** (`LocalDataExporting` / `LocalCSVExporter`) writes filtered transactions using the same `TransactionFilter` as the list UI. Cloud backup / multi-device sync remain out of scope.
 
 ## Consequences
 

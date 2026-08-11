@@ -143,41 +143,29 @@ struct SettingsView: View {
             }
             Section("Data") {
                 Button {
-                    Task { await viewModel.exportLocalData() }
+                    Task { await viewModel.prepareExportSheet() }
                 } label: {
-                    if viewModel.isExporting {
-                        HStack {
-                            ProgressView()
-                            Text("Exporting…")
-                        }
-                    } else {
-                        Label("Export JSON…", systemImage: "square.and.arrow.up")
-                    }
+                    Label("Export CSV…", systemImage: "square.and.arrow.up")
                 }
-                .disabled(viewModel.isExporting)
-                .accessibilityIdentifier("settings.exportJSON")
+                .accessibilityIdentifier("settings.exportCSV")
 
-                if let message = viewModel.exportErrorMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-
-                Text("Transaction data is stored on this device. Deleting the app removes local data; reconnect to sync again. Export creates a portable backup without bank credentials.")
+                Text("Exports matching transactions as CSV using the same filters as the Transactions list. Bank credentials are never included.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: $viewModel.showExportSheet) {
+            ExportCSVSheet(viewModel: viewModel)
+        }
         .sheet(isPresented: Binding(
             get: { viewModel.exportFileURL != nil },
             set: { if !$0 { viewModel.clearExportShare() } }
         )) {
             if let url = viewModel.exportFileURL {
-                ShareLink(item: url) {
-                    Label("Share Export", systemImage: "square.and.arrow.up")
+                ActivityShareSheet(activityItems: [url]) {
+                    viewModel.clearExportShare()
                 }
-                .presentationDetents([.medium])
             }
         }
         .task {
