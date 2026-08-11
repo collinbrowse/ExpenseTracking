@@ -4,7 +4,7 @@ import CashFlowKit
 
 /// One-time store cleanup: drop leaked LLM titles and discard pre-migration rule undo snapshots.
 public enum EnrichmentSanitizer {
-    private static let defaultsKey = "cashflow.enrichmentSanitizer.v1"
+    private static let defaultsKey = "cashflow.enrichmentSanitizer.v2"
 
     /// Detached so the one-time full-table scan never blocks app launch. The pass is
     /// idempotent and gated on `defaultsKey`, so a launch that ends before it finishes

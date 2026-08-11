@@ -28,10 +28,21 @@ final class DependencyContainer {
     let transactionAssistant: any TransactionAssistantServing
     let categorizationRuleDrafting: any CategorizationRuleDrafting
     let backgroundEnrichment: any BackgroundEnrichmentScheduling
+    let localDataExport: any LocalDataExporting
+    let widgetTimelineReloader: any WidgetTimelineReloading
     let useLargeDemoSeed: Bool
 
     /// Launch-safe: SwiftData load/migration failures wipe and fall back; never fails for disk issues.
-    convenience init(largeDemoSeed: Bool = false) {
+    convenience init(largeDemoSeed: Bool = false, uiTesting: Bool = false) {
+        if uiTesting {
+            do {
+                let model = try ModelContainerFactory.make(inMemory: true, appGroupID: nil)
+                self.init(modelContainer: model, largeDemoSeed: largeDemoSeed, uiTesting: true)
+            } catch {
+                preconditionFailure("UITest in-memory ModelContainer failed: \(error)")
+            }
+            return
+        }
         // XCTest / unsigned CI hosts often lack App Group entitlements; SwiftData traps
         // (does not throw) if `groupContainer` is requested without them.
         let appGroupID = Self.isRunningUnitTests
@@ -39,7 +50,8 @@ final class DependencyContainer {
             : NetSnapshotStore.defaultAppGroupID
         self.init(
             modelContainer: ModelContainerFactory.makeResilient(appGroupID: appGroupID),
-            largeDemoSeed: largeDemoSeed
+            largeDemoSeed: largeDemoSeed,
+            uiTesting: false
         )
     }
 
@@ -53,10 +65,10 @@ final class DependencyContainer {
             inMemory: inMemory,
             appGroupID: NetSnapshotStore.defaultAppGroupID
         )
-        self.init(modelContainer: container, largeDemoSeed: largeDemoSeed)
+        self.init(modelContainer: container, largeDemoSeed: largeDemoSeed, uiTesting: false)
     }
 
-    private init(modelContainer: ModelContainer, largeDemoSeed: Bool) {
+    private init(modelContainer: ModelContainer, largeDemoSeed: Bool, uiTesting: Bool) {
         EnrichmentSanitizer.runIfNeeded(modelContainer: modelContainer)
         EnrichmentSkipReviver.runIfNeeded(modelContainer: modelContainer)
         self.useLargeDemoSeed = largeDemoSeed
@@ -121,13 +133,18 @@ final class DependencyContainer {
         let simpleFIN = SimpleFINBankLinkingService()
         let linking = CompositeBankLinkingService(demo: demo, simpleFIN: simpleFIN)
         self.bankLinking = linking
-        let widgetTimelineReloader = WidgetKitTimelineReloader()
+        // WidgetCenter can stall on unsigned CI simulators; UITests use a no-op.
+        let widgetTimelineReloader: any WidgetTimelineReloading = uiTesting
+            ? NoOpWidgetTimelineReloader()
+            : WidgetKitTimelineReloader()
+        self.widgetTimelineReloader = widgetTimelineReloader
         let snapshotStore = NetSnapshotStore()
         let sync = SyncCoordinator(
             modelContainer: modelContainer,
             bankLinking: linking,
             widgetTimelineReloader: widgetTimelineReloader,
-            enrichment: enrichment
+            // Skip post-sync enrichment in UITests — Foundation Models can hang on CI.
+            enrichment: uiTesting ? nil : enrichment
         )
         self.syncServing = sync
         let resetter = LocalDataResetter(
@@ -153,5 +170,6 @@ final class DependencyContainer {
             workCoordinator: workCoordinator
         )
         self.backgroundEnrichment = background
+        self.localDataExport = LocalCSVExporter(modelContainer: modelContainer)
     }
 }

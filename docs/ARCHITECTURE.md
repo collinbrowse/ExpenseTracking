@@ -45,13 +45,14 @@ Money amounts are `Decimal` end-to-end in domain/data/UI models. Charts may conv
 
 | Feature folder | Role |
 |----------------|------|
-| `Features/Home` | Net hero, ranges, chart |
-| `Features/Transactions` | Paginated list, filters, search, edit |
+| `Features/Home` | Net hero, ranges, dual-color chart |
+| `Features/Transactions` | Paginated list, filters, store search, edit |
+| `Features/Insights` | Spending pies + View transactions cross-tab focus |
 | `Features/Accounts` | Link / Demo / sync / onboarding |
-| `Features/Settings` | About + privacy note + app lock toggle |
+| `Features/Settings` | About + privacy + export + app lock + cleanup |
 | `Features/AppLock` | Lock gate overlay, privacy cover, Face ID / passcode unlock |
 | `DesignSystem` | Shared theme / formatting helpers |
-| `App` | Entry, tabs, `DependencyContainer` |
+| `App` | Entry, tabs, `AppRouter`, `DependencyContainer` |
 
 ## Navigation
 
@@ -81,7 +82,7 @@ Implemented only in `CalculateNetCashFlowUseCase` / `CashFlowContribution`:
 - Keyset pagination (page size **50**)
 - Filter predicates applied at the repository layer where possible
 - Preformatted `TransactionRowModel` strings; tiny `List` rows
-- Search filters the **in-memory loaded page set** (not a separate full-table query)
+- Search uses `TransactionFilter.searchQuery` at the repository keyset layer (debounced in the list ViewModel)
 
 ## Concurrency
 

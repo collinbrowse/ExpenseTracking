@@ -21,7 +21,7 @@ Code: `ExpenseTracking/Features/Home/`
 - Bank-style list grouped by month (headers scroll with content)
 - **Keyset pagination** (page size 50); loads more near the end of the list
 - Filters (sheet): account, category, tag, date (All / Month / 30d / Year / Custom)
-- Search over **already loaded** rows: title, category, tags, account, amount digits (e.g. `66` → `$66.43`)
+- Search (store-wide via repository): title, category, tags, account, amount digits (e.g. `66` → `$66.43`)
 - Edit sheet: category + description + multi-select tags (no delete in MVP)
 - Pull-to-refresh sync with stage/window progress banner (not transaction totals)
 
@@ -82,6 +82,7 @@ Code: `ExpenseTracking/Features/AppLock/`, `Features/Settings/`, `CashFlowData/S
 - Demo provider for fixtures / portfolio; SimpleFIN for real institutions — **not coexisting in one store**
 - Widget timelines reloaded after successful sync and on full wipe (`WidgetTimelineReloading`)
 - Launch: single `VersionedSchema`; store load failures wipe App Group/local stores and retry, then in-memory — **no `fatalError` on SwiftData migration**
+- **CSV export** (Settings → Data): filtered transaction CSV via `LocalDataExporting` using the shared `TransactionFilterSession` (same filters as the Transactions list) — no Keychain secrets
 
 Code: `Packages/CashFlowData/`
 
@@ -121,7 +122,7 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 | Topic | Behavior today |
 |-------|----------------|
 | Bank history depth | SimpleFIN/Bridge only returns what the institution exposes; lookback requests older windows but empty older ranges are common |
-| Transaction search | Client-side over **loaded pages only**, not a full-store query |
+| Transaction search | Repository-backed via `TransactionFilter.searchQuery` (title, location, bank description, category, tags, account, amount digits); debounced in the list ViewModel |
 | Edited description | Manual / rule titles stick when category is sticky (`userEditedCategory` / `.user`) or locked; otherwise bank description change clears enrichment and resets category to Undefined for re-classification |
 | Home date fetch | Posted txs for the range; date scoping may finish in memory when SwiftData predicates are fragile |
 | App Group | Shared SwiftData + leftover snapshot cleanup use `group.com.expensetracking.shared`; widget shows empty state if the group container is unavailable |
@@ -130,8 +131,9 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 
 ## Deferred (not built)
 
-- JSON / CSV export, cloud backup, multi-device sync
-- CSV import, Plaid (or other aggregators requiring a backend)
+- CSV export/import, cloud backup, multi-device sync
+- JSON **import** / restore from export file
+- Plaid (or other aggregators requiring a backend)
 - Delete transaction API (forbidden for MVP)
 - Budgets, multi-currency, marketing screenshot pack
 - Auto-tagging *rules* (deterministic); tag date ranges or event budgets; splitting one amount across tags

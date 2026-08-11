@@ -31,4 +31,13 @@ enum TransactionDateFilterOption: String, CaseIterable, Identifiable {
             .custom(min(customStart, customEnd)...max(customStart, customEnd))
         }
     }
+
+    init(homeRange: HomeRangeOption) {
+        switch homeRange {
+        case .month: self = .month
+        case .last30Days: self = .last30Days
+        case .lastYear: self = .lastYear
+        case .custom: self = .custom
+        }
+    }
 }

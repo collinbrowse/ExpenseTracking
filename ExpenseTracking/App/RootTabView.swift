@@ -4,7 +4,7 @@ import CashFlowKit
 struct RootTabView: View {
     let container: DependencyContainer
     @Environment(\.scenePhase) private var scenePhase
-    @State private var selectedTab: AppTab = .home
+    @State private var router = AppRouter()
     @State private var homeViewModel: HomeViewModel
     @State private var transactionsViewModel: TransactionsViewModel
     @State private var insightsViewModel: InsightsViewModel
@@ -16,17 +16,19 @@ struct RootTabView: View {
 
     init(container: DependencyContainer) {
         self.container = container
+        let filters = TransactionFilterSession()
         _homeViewModel = State(
             initialValue: HomeViewModel(
                 transactionRepository: container.transactionRepository,
                 syncServing: container.syncServing,
                 calculateNetCashFlow: container.calculateNetCashFlow,
                 connectivity: container.connectivity,
-                widgetTimelineReloader: WidgetKitTimelineReloader()
+                widgetTimelineReloader: container.widgetTimelineReloader
             )
         )
         _transactionsViewModel = State(
             initialValue: TransactionsViewModel(
+                filters: filters,
                 transactionRepository: container.transactionRepository,
                 accountRepository: container.accountRepository,
                 tagRepository: container.tagRepository,
@@ -60,6 +62,8 @@ struct RootTabView: View {
         _appLockViewModel = State(initialValue: lock)
         _settingsViewModel = State(
             initialValue: SettingsViewModel(
+                filters: filters,
+                transactionRepository: container.transactionRepository,
                 ruleRepository: container.categorizationRuleRepository,
                 ruleApplying: container.categorizationRuleApplying,
                 accountRepository: container.accountRepository,
@@ -69,7 +73,8 @@ struct RootTabView: View {
                 appLock: lock,
                 syncServing: container.syncServing,
                 backgroundEnrichment: container.backgroundEnrichment,
-                cleanupState: container.titleCleanupState
+                cleanupState: container.titleCleanupState,
+                localDataExport: container.localDataExport
             )
         )
     }
@@ -78,14 +83,14 @@ struct RootTabView: View {
         tabContent
             .modifier(RootSheetsModifier(
                 accountsViewModel: accountsViewModel,
-                selectedTab: $selectedTab,
+                selectedTab: $router.selectedTab,
                 showEnrichmentPrompt: $showEnrichmentPrompt,
                 pendingEnrichmentEstimate: pendingEnrichmentEstimate,
                 onContinueEnrichment: continueEnrichmentDrain,
                 onDeferEnrichment: deferEnrichmentDrain
             ))
             .modifier(RootLifecycleModifier(
-                selectedTab: $selectedTab,
+                selectedTab: $router.selectedTab,
                 homeViewModel: homeViewModel,
                 transactionsViewModel: transactionsViewModel,
                 insightsViewModel: insightsViewModel,
@@ -94,13 +99,14 @@ struct RootTabView: View {
                 appLockViewModel: appLockViewModel,
                 scenePhase: scenePhase,
                 onStoreEpoch: handleStoreEpoch,
-                onScenePhase: handleScenePhase
+                onScenePhase: handleScenePhase,
+                onApplyTransactionsFocus: applyPendingTransactionsFocus
             ))
     }
 
     @ViewBuilder
     private var tabContent: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: $router.selectedTab) {
             NavigationStack {
                 HomeView(viewModel: homeViewModel)
             }
@@ -123,7 +129,18 @@ struct RootTabView: View {
             .tag(AppTab.transactions)
 
             NavigationStack {
-                InsightsView(viewModel: insightsViewModel)
+                InsightsView(
+                    viewModel: insightsViewModel,
+                    onViewTransactions: { categoryID, tagID in
+                        router.openInsightsTransactions(
+                            categoryID: categoryID,
+                            tagID: tagID,
+                            dateOption: TransactionDateFilterOption(homeRange: insightsViewModel.selectedOption),
+                            customStart: insightsViewModel.customStart,
+                            customEnd: insightsViewModel.customEnd
+                        )
+                    }
+                )
             }
             .tabItem { Label("Insights", systemImage: "chart.pie") }
             .tag(AppTab.insights)
@@ -133,10 +150,7 @@ struct RootTabView: View {
                     viewModel: settingsViewModel,
                     accountsViewModel: accountsViewModel,
                     onSelectAccount: { accountID in
-                        Task {
-                            await transactionsViewModel.focusAccount(accountID)
-                            selectedTab = .transactions
-                        }
+                        router.openAccountTransactions(accountID)
                     }
                 )
             }
@@ -144,6 +158,23 @@ struct RootTabView: View {
             .badge(settingsViewModel.settingsTabBadge)
             .tag(AppTab.settings)
         }
+    }
+
+    private func applyPendingTransactionsFocus() async -> Bool {
+        guard let focus = router.consumeTransactionsFocus() else { return false }
+        switch focus {
+        case .account(let accountID):
+            await transactionsViewModel.focusAccount(accountID)
+        case let .insights(categoryID, tagID, dateOption, customStart, customEnd):
+            await transactionsViewModel.focusInsights(
+                categoryID: categoryID,
+                tagID: tagID,
+                dateOption: dateOption,
+                customStart: customStart,
+                customEnd: customEnd
+            )
+        }
+        return true
     }
 
     private func handleStoreEpoch() async {
@@ -278,6 +309,7 @@ private struct RootLifecycleModifier: ViewModifier {
     let scenePhase: ScenePhase
     let onStoreEpoch: () async -> Void
     let onScenePhase: (ScenePhase) async -> Void
+    let onApplyTransactionsFocus: () async -> Bool
 
     func body(content: Content) -> some View {
         content
@@ -331,8 +363,11 @@ private struct RootLifecycleModifier: ViewModifier {
             Task { await insightsViewModel.reload(preferLoadingIndicator: false) }
         case .transactions:
             Task {
+                let hadFocus = await onApplyTransactionsFocus()
                 await transactionsViewModel.refreshTagsIfNeeded()
-                await transactionsViewModel.resetAndLoad()
+                if !hadFocus {
+                    await transactionsViewModel.resetAndLoad()
+                }
             }
         }
     }
@@ -363,6 +398,7 @@ private struct EnrichmentPromptSheet: View {
                     .frame(maxWidth: .infinity)
                 Button("Not Now", action: onNotNow)
                     .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("enrichment.notNow")
             }
             .padding()
             .navigationTitle("Transaction Cleanup")

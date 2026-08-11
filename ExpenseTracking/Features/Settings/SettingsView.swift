@@ -142,12 +142,32 @@ struct SettingsView: View {
                 LabeledContent("Build", value: viewModel.appBuild)
             }
             Section("Data") {
-                Text("Transaction data is stored on this device. Deleting the app removes local data; reconnect to sync again.")
+                Button {
+                    Task { await viewModel.prepareExportSheet() }
+                } label: {
+                    Label("Export CSV…", systemImage: "square.and.arrow.up")
+                }
+                .accessibilityIdentifier("settings.exportCSV")
+
+                Text("Exports matching transactions as CSV using the same filters as the Transactions list. Bank credentials are never included.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Settings")
+        .sheet(isPresented: $viewModel.showExportSheet) {
+            ExportCSVSheet(viewModel: viewModel)
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel.exportFileURL != nil },
+            set: { if !$0 { viewModel.clearExportShare() } }
+        )) {
+            if let url = viewModel.exportFileURL {
+                ActivityShareSheet(activityItems: [url]) {
+                    viewModel.clearExportShare()
+                }
+            }
+        }
         .task {
             viewModel.startObservingEnrichmentProgress()
             await viewModel.reloadHistoryStatus()

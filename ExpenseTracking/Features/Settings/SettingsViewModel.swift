@@ -16,6 +16,9 @@ final class SettingsViewModel {
     let syncServing: any SyncServing
     let backgroundEnrichment: any BackgroundEnrichmentScheduling
     let cleanupState: any TitleCleanupStateStoring
+    let localDataExport: any LocalDataExporting
+    let filters: TransactionFilterSession
+    let transactionRepository: any TransactionRepository
 
     var historyStatus: HistoryImportStatus?
     var selectedLookback: HistoryLookbackYears = .default
@@ -27,6 +30,13 @@ final class SettingsViewModel {
     var cleanupTotal = 0
     var modelAvailability: OnDeviceModelAvailability = .unavailable
     var ruleCount = 0
+    var isExporting = false
+    var exportErrorMessage: String?
+    var exportFileURL: URL?
+    var showExportSheet = false
+    var exportAccounts: [Account] = []
+    var exportTags: [Tag] = []
+    var exportMatchCount: Int?
     /// True after a drain stops early with titles still remaining — show Resume.
     /// Mirrored to `cleanupState` so a relaunch still offers Resume.
     private(set) var isTitleCleanupPaused: Bool
@@ -42,6 +52,8 @@ final class SettingsViewModel {
     }()
 
     init(
+        filters: TransactionFilterSession,
+        transactionRepository: any TransactionRepository,
         ruleRepository: any CategorizationRuleRepository,
         ruleApplying: any CategorizationRuleApplying,
         accountRepository: any AccountRepository,
@@ -51,8 +63,11 @@ final class SettingsViewModel {
         appLock: AppLockViewModel,
         syncServing: any SyncServing,
         backgroundEnrichment: any BackgroundEnrichmentScheduling,
-        cleanupState: any TitleCleanupStateStoring
+        cleanupState: any TitleCleanupStateStoring,
+        localDataExport: any LocalDataExporting
     ) {
+        self.filters = filters
+        self.transactionRepository = transactionRepository
         self.ruleRepository = ruleRepository
         self.ruleApplying = ruleApplying
         self.accountRepository = accountRepository
@@ -63,6 +78,7 @@ final class SettingsViewModel {
         self.syncServing = syncServing
         self.backgroundEnrichment = backgroundEnrichment
         self.cleanupState = cleanupState
+        self.localDataExport = localDataExport
         self.isTitleCleanupPaused = cleanupState.isPaused()
     }
 
@@ -313,6 +329,54 @@ final class SettingsViewModel {
     /// Back-compat name used by the Settings button.
     func cleanUpTitles() async {
         await startTitleCleanup()
+    }
+
+    func prepareExportSheet() async {
+        showExportSheet = true
+        exportErrorMessage = nil
+        exportMatchCount = nil
+        exportAccounts = (try? await accountRepository.fetchAll()) ?? []
+        exportTags = (try? await tagRepository.fetchAll()) ?? []
+        await refreshExportMatchCount()
+    }
+
+    func refreshExportMatchCount() async {
+        do {
+            let matching = try await transactionRepository.fetchAllMatching(filter: filters.filter)
+            exportMatchCount = matching.count
+        } catch {
+            exportMatchCount = nil
+        }
+    }
+
+    func exportLocalData() async {
+        guard !isExporting else { return }
+        isExporting = true
+        exportErrorMessage = nil
+        defer { isExporting = false }
+        do {
+            let data = try await localDataExport.exportCSV(filter: filters.filter)
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let name = "CashFlow-\(formatter.string(from: Date())).csv"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            try data.write(to: url, options: .atomic)
+            exportFileURL = url
+            showExportSheet = false
+        } catch {
+            exportFileURL = nil
+            exportErrorMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn’t export CSV."
+            )
+        }
+    }
+
+    func clearExportShare() {
+        exportFileURL = nil
     }
 
     private func loadRuleCount() async -> Int {

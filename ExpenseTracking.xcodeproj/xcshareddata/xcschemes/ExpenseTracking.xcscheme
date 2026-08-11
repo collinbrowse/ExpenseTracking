@@ -37,6 +37,20 @@
          </BuildActionEntry>
          <BuildActionEntry
             buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "153E985364689056E0F1E835"
+               BuildableName = "ExpenseTrackingUITests.xctest"
+               BlueprintName = "ExpenseTrackingUITests"
+               ReferencedContainer = "container:ExpenseTracking.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
             buildForRunning = "YES"
             buildForProfiling = "YES"
             buildForArchiving = "YES"
@@ -75,6 +89,17 @@
                BlueprintIdentifier = "3F25686B5B3C8057B1021DE1"
                BuildableName = "ExpenseTrackingTests.xctest"
                BlueprintName = "ExpenseTrackingTests"
+               ReferencedContainer = "container:ExpenseTracking.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "153E985364689056E0F1E835"
+               BuildableName = "ExpenseTrackingUITests.xctest"
+               BlueprintName = "ExpenseTrackingUITests"
                ReferencedContainer = "container:ExpenseTracking.xcodeproj">
             </BuildableReference>
          </TestableReference>

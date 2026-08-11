@@ -2,12 +2,16 @@ import Foundation
 import CashFlowKit
 @preconcurrency import SwiftData
 
-/// Single versioned schema.
+/// Frozen live SwiftData schema (v1).
 ///
-/// Do not add parallel `VersionedSchema` enums that list the same `@Model` types —
-/// SwiftData checksums the live model shape, so identical stages crash with
-/// `Duplicate version checksums detected`. Additive fields use defaults on the
-/// `@Model` types; incompatible stores are wiped in `ModelContainerFactory`.
+/// - Keep a **single** `VersionedSchema` listing these `@Model` types. Parallel enums that
+///   reference the same model types crash with `Duplicate version checksums detected`.
+/// - Prefer **additive** fields with property defaults. Breaking shape changes require
+///   distinct V2 model types + a real `MigrationStage` — do not treat wipe as the happy path.
+/// - Incompatible / corrupt stores are wiped as a **last resort** in `ModelContainerFactory`
+///   (clears the shared App Group store the widget also reads live).
+/// - Portable backup uses a separate JSON `formatVersion` (`LocalDataExportDocument`), not
+///   this SwiftData version identifier.
 public enum CashFlowSchemaV1: VersionedSchema {
     public static let versionIdentifier = Schema.Version(1, 0, 0)
     public static var models: [any PersistentModel.Type] {

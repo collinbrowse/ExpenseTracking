@@ -177,13 +177,15 @@ public actor CategorizationRuleReapplier: CategorizationRuleApplying {
 
             var didChange = false
             if !current.categoryLocked, resolved.matchedCategoryRule {
+                let source = resolved.categorySource ?? .rule
+                let sticky = source.isUserEditedCompat
                 if entity.categoryID != resolved.categoryID.rawValue
-                    || entity.userEditedCategory != true
-                    || entity.categorySourceRaw != CategorySource.rule.rawValue
+                    || entity.userEditedCategory != sticky
+                    || entity.categorySourceRaw != source.rawValue
                 {
                     entity.categoryID = resolved.categoryID.rawValue
-                    entity.userEditedCategory = true
-                    entity.categorySourceRaw = CategorySource.rule.rawValue
+                    entity.userEditedCategory = sticky
+                    entity.categorySourceRaw = source.rawValue
                     didChange = true
                 }
             }

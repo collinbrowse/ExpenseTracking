@@ -112,7 +112,8 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
             tagIDs: resolvedTags,
             enrichedTitle: title,
             enrichedLocation: location,
-            titleSource: .user
+            titleSource: .user,
+            categorySource: .user
         )
         return TransactionRowModel(
             transaction: transaction,

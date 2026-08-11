@@ -124,6 +124,9 @@ struct TransactionsView: View {
         .task {
             await viewModel.onAppear()
         }
+        .onChange(of: viewModel.filters.revision) { _, _ in
+            Task { await viewModel.handleFilterRevisionChange() }
+        }
         .sheet(isPresented: $viewModel.showFilters) {
             filtersSheet
         }
@@ -167,7 +170,7 @@ struct TransactionsView: View {
                         .buttonStyle(.plain)
 
                         Button {
-                            Task { await viewModel.clearFilter(chip.kind) }
+                            viewModel.clearFilter(chip.kind)
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.caption.weight(.semibold))
@@ -185,7 +188,7 @@ struct TransactionsView: View {
 
                 if viewModel.activeFilterChips.count > 1 {
                     Button("Clear all") {
-                        Task { await viewModel.clearAllFilters() }
+                        viewModel.clearAllFilters()
                     }
                     .font(.subheadline)
                     .accessibilityIdentifier("transactions.filters.clearAll")
@@ -207,49 +210,12 @@ struct TransactionsView: View {
     private var filtersSheet: some View {
         NavigationStack {
             Form {
-                Section("Account") {
-                    Picker("Account", selection: $viewModel.filterAccountID) {
-                        Text("All").tag(Optional<AccountID>.none)
-                        ForEach(viewModel.accounts) { account in
-                            Text(account.name).tag(Optional(account.id))
-                        }
-                    }
-                    .accessibilityIdentifier("transactions.filter.account")
-                }
-
-                Section("Date") {
-                    Picker("Date", selection: $viewModel.filterDateOption) {
-                        ForEach(TransactionDateFilterOption.allCases) { option in
-                            Text(option.title).tag(option)
-                        }
-                    }
-                    .accessibilityIdentifier("transactions.filter.date")
-
-                    if viewModel.filterDateOption == .custom {
-                        DatePicker("Start", selection: $viewModel.customStart, displayedComponents: .date)
-                        DatePicker("End", selection: $viewModel.customEnd, displayedComponents: .date)
-                    }
-                }
-
-                Section("Category") {
-                    Picker("Category", selection: $viewModel.filterCategoryID) {
-                        Text("All").tag(Optional<CategoryID>.none)
-                        ForEach(SystemCategory.allCategories) { category in
-                            Text(category.name).tag(Optional(category.id))
-                        }
-                    }
-                    .accessibilityIdentifier("transactions.filter.category")
-                }
-
-                Section("Tag") {
-                    Picker("Tag", selection: $viewModel.filterTagID) {
-                        Text("All").tag(Optional<TagID>.none)
-                        ForEach(viewModel.tags) { tag in
-                            Text(tag.name).tag(Optional(tag.id))
-                        }
-                    }
-                    .accessibilityIdentifier("transactions.filter.tag")
-                }
+                TransactionFiltersForm(
+                    filters: viewModel.filters,
+                    accounts: viewModel.accounts,
+                    tags: viewModel.tags,
+                    accessibilityPrefix: "transactions.filter"
+                )
             }
             .navigationTitle("Filters")
             .toolbar {
@@ -257,8 +223,8 @@ struct TransactionsView: View {
                     Button("Cancel") { viewModel.showFilters = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Apply") {
-                        Task { await viewModel.applyFilters() }
+                    Button("Done") {
+                        viewModel.applyFilters()
                     }
                 }
             }

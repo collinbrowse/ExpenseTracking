@@ -35,7 +35,7 @@ public enum MergeSyncPolicy: Sendable {
             let categorySource: CategorySource?
             if resolved.matchedCategoryRule {
                 categoryID = resolved.categoryID
-                categorySource = .rule
+                categorySource = resolved.categorySource ?? .rule
             } else if preferSuggestedCategory,
                       remote.categoryID != SystemCategory.undefined.id
             {
@@ -109,8 +109,14 @@ public enum MergeSyncPolicy: Sendable {
                 fallbackCategoryID: SystemCategory.undefined.id
             )
             categoryID = local.categoryID
-            categorySource = local.categorySource
-            userEdited = local.userEditedCategory
+            // Backfill legacy sticky nil+bool on merge output; keep category unchanged.
+            if local.categorySource == nil, local.userEditedCategory {
+                categorySource = .user
+                userEdited = true
+            } else {
+                categorySource = local.categorySource
+                userEdited = categorySource?.isUserEditedCompat ?? local.userEditedCategory
+            }
         } else {
             resolved = ResolveTransactionCategoryUseCase.execute(
                 transaction: matchBase,
@@ -121,12 +127,12 @@ public enum MergeSyncPolicy: Sendable {
             )
             if resolved.matchedCategoryRule {
                 categoryID = resolved.categoryID
-                categorySource = .rule
-                userEdited = true
+                categorySource = resolved.categorySource ?? .rule
+                userEdited = categorySource?.isUserEditedCompat ?? true
             } else if isUserSticky(local) {
                 // User edit always wins — including across bank description changes.
                 categoryID = local.categoryID
-                categorySource = local.categorySource == .user ? .user : (local.categorySource ?? .user)
+                categorySource = .user
                 userEdited = true
             } else if remote.isPending {
                 // Pending stays unprocessed until posted (LLM / keyword run after post).
@@ -140,7 +146,7 @@ public enum MergeSyncPolicy: Sendable {
             } else if isProcessedSticky(local) {
                 categoryID = local.categoryID
                 categorySource = effectiveProcessedSource(local)
-                userEdited = false
+                userEdited = categorySource?.isUserEditedCompat ?? false
             } else {
                 // Still Undefined / unprocessed — stay on Undefined until enrichment.
                 categoryID = SystemCategory.undefined.id
@@ -195,13 +201,8 @@ public enum MergeSyncPolicy: Sendable {
     }
 
     private static func isUserSticky(_ local: Transaction) -> Bool {
-        if local.categorySource == .user { return true }
-        if local.userEditedCategory, local.categorySource != .rule, local.categorySource != .llm,
-           local.categorySource != .keyword
-        {
-            return true
-        }
-        // Compat: sticky bool without source, and not a rule-stamped row we can tell apart.
+        if local.effectiveCategorySource == .user { return true }
+        // Compat: sticky bool without source (pre-categorySource stores).
         if local.userEditedCategory, local.categorySource == nil {
             return true
         }
@@ -209,8 +210,12 @@ public enum MergeSyncPolicy: Sendable {
     }
 
     private static func isProcessedSticky(_ local: Transaction) -> Bool {
-        if local.categorySource == .llm || local.categorySource == .keyword { return true }
-        if local.categorySource == .rule { return true }
+        switch local.effectiveCategorySource {
+        case .llm, .keyword, .rule:
+            return true
+        case .user, .none:
+            break
+        }
         // Legacy row with a real category and no Undefined marker.
         if local.categoryID != SystemCategory.undefined.id,
            local.categorySource == nil,

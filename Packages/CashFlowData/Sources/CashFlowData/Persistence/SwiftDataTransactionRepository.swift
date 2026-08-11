@@ -73,9 +73,9 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
             throw CashFlowError.persistence(message: "Transaction not found")
         }
         entity.categoryID = categoryID.rawValue
-        entity.userEditedCategory = true
         entity.categoryLocked = categoryLocked
         entity.categorySourceRaw = CategorySource.user.rawValue
+        entity.userEditedCategory = CategorySource.user.isUserEditedCompat
         try context.save()
     }
 
@@ -139,14 +139,8 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
                 continue
             }
             entity.categoryID = assignment.categoryID.rawValue
-            entity.userEditedCategory = assignment.userEditedCategory
-            if let source = assignment.categorySource {
-                entity.categorySourceRaw = source.rawValue
-            } else if assignment.userEditedCategory {
-                entity.categorySourceRaw = CategorySource.user.rawValue
-            } else {
-                entity.categorySourceRaw = nil
-            }
+            entity.categorySourceRaw = EntityMappers.categorySourceRaw(from: incoming)
+            entity.userEditedCategory = incoming?.isUserEditedCompat ?? false
         }
         try context.save()
     }
@@ -385,6 +379,21 @@ public actor SwiftDataTransactionRepository: TransactionRepository {
             if entity.postedDate < dateInterval.start || entity.postedDate > dateInterval.end {
                 return false
             }
+        }
+        if let query = filter.searchQuery {
+            let categoryName = SystemCategory.category(for: CategoryID(entity.categoryID)).name
+            let tagNames = entity.tags.map(\.name)
+            let accountName = entity.account?.name ?? ""
+            return TransactionSearchMatching.matches(
+                query: query,
+                title: entity.enrichedTitle,
+                location: entity.enrichedLocation,
+                description: entity.transactionDescription,
+                categoryName: categoryName,
+                tagNames: tagNames,
+                accountName: accountName,
+                amount: entity.amount
+            )
         }
         return true
     }

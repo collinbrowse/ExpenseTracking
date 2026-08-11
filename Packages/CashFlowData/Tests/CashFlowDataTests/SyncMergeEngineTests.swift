@@ -98,6 +98,7 @@ struct SyncMergeEngineTests {
         #expect(tx.amount == -25)
         #expect(tx.description == "Coffee Shop")
         #expect(tx.userEditedCategory == true)
+        #expect(tx.categorySource == .user)
     }
 
     @Test("User-edited account name preserved on re-sync")

@@ -15,6 +15,27 @@ struct ValidateParsedDescriptionUseCaseTests {
         #expect(parsed?.location == "Fort Collins CO")
     }
 
+    @Test("Strips location left in title by lazy LLM")
+    func stripsTrailingLocationFromTitle() {
+        let parsed = ValidateParsedDescriptionUseCase.execute(
+            title: "TEQUILAS DURANGO CO",
+            location: "DURANGO CO",
+            rawDescription: "TEQUILAS       DURANGO      CO"
+        )
+        #expect(parsed?.title == "TEQUILAS")
+        #expect(parsed?.location == "DURANGO CO")
+    }
+
+    @Test("Rejects when stripping location would empty the title")
+    func rejectsLocationOnlyTitle() {
+        let parsed = ValidateParsedDescriptionUseCase.execute(
+            title: "DURANGO CO",
+            location: "DURANGO CO",
+            rawDescription: "TEQUILAS DURANGO CO"
+        )
+        #expect(parsed == nil)
+    }
+
     @Test("Rejects schema type name leak")
     func rejectsGenerableMerchantParse() {
         let parsed = ValidateParsedDescriptionUseCase.execute(
