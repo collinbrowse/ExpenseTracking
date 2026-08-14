@@ -85,7 +85,7 @@ private struct MockAccountsSyncServing: SyncServing {
 }
 
 private struct MockConnectionLifecycle: ConnectionLifecycleServing {
-    func replaceAndLink(withSetupToken token: String) async throws -> LinkedConnection {
+    func replaceAndLink(withSetupToken token: String, deleteLocalData: Bool) async throws -> LinkedConnection {
         LinkedConnection(isLinked: true, providerName: "SimpleFIN")
     }
 
@@ -105,4 +105,20 @@ private struct MockAccountRepository: AccountRepository {
 
     func fetchAll() async throws -> [Account] { accounts }
     func updateName(accountID: AccountID, name: String) async throws {}
+    func create(
+        name: String,
+        institutionName: String,
+        currencyCode: String,
+        createdByImportBatchID: ImportBatchID?
+    ) async throws -> Account {
+        Account(
+            id: AccountID(UUID().uuidString),
+            externalID: "csv:test",
+            name: name,
+            institutionName: institutionName,
+            currencyCode: currencyCode,
+            balance: 0,
+            balanceDate: .now
+        )
+    }
 }

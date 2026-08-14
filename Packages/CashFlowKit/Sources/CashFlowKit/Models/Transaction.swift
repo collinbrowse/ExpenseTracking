@@ -44,6 +44,10 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
     public let titleSource: TitleSource?
     /// Who authored `categoryID`. Nil on unprocessed / legacy rows (see `effectiveCategorySource`).
     public let categorySource: CategorySource?
+    /// How this row entered the store (bank sync vs CSV import).
+    public let ingestSource: IngestSource
+    /// CSV import batch that created this row, when applicable.
+    public let importBatchID: ImportBatchID?
 
     public init(
         id: TransactionID,
@@ -62,7 +66,9 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         enrichedTitle: String? = nil,
         enrichedLocation: String? = nil,
         titleSource: TitleSource? = nil,
-        categorySource: CategorySource? = nil
+        categorySource: CategorySource? = nil,
+        ingestSource: IngestSource = .bankLink,
+        importBatchID: ImportBatchID? = nil
     ) {
         self.id = id
         self.accountID = accountID
@@ -81,13 +87,15 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         self.enrichedLocation = enrichedLocation
         self.titleSource = titleSource
         self.categorySource = categorySource
+        self.ingestSource = ingestSource
+        self.importBatchID = importBatchID
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, accountID, externalID, amount, postedDate, description
         case categoryID, currencyCode, userEditedCategory, isPending
         case categoryLocked, tagIDs, suppressedTagIDs, enrichedTitle, enrichedLocation
-        case titleSource, categorySource
+        case titleSource, categorySource, ingestSource, importBatchID
     }
 
     public init(from decoder: Decoder) throws {
@@ -109,6 +117,8 @@ public struct Transaction: Identifiable, Hashable, Sendable, Codable {
         enrichedLocation = try container.decodeIfPresent(String.self, forKey: .enrichedLocation)
         titleSource = try container.decodeIfPresent(TitleSource.self, forKey: .titleSource)
         categorySource = try container.decodeIfPresent(CategorySource.self, forKey: .categorySource)
+        ingestSource = try container.decodeIfPresent(IngestSource.self, forKey: .ingestSource) ?? .bankLink
+        importBatchID = try container.decodeIfPresent(ImportBatchID.self, forKey: .importBatchID)
     }
 
     /// Display title: enrichment when present, else raw bank description.

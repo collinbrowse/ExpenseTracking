@@ -74,7 +74,8 @@ struct RootTabView: View {
                 syncServing: container.syncServing,
                 backgroundEnrichment: container.backgroundEnrichment,
                 cleanupState: container.titleCleanupState,
-                localDataExport: container.localDataExport
+                localDataExport: container.localDataExport,
+                csvImport: container.csvImport
             )
         )
     }

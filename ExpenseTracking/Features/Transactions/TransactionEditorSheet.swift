@@ -25,6 +25,13 @@ struct TransactionEditorSheet: View {
                         .accessibilityIdentifier("transactions.editor.amount")
                         .accessibilityLabel("Amount \(viewModel.editingAmountText)")
 
+                    if let sourceLabel = viewModel.editingIngestSourceLabel {
+                        Text(sourceLabel)
+                            .font(.caption)
+                            .foregroundStyle(Theme.muted)
+                            .accessibilityIdentifier("transactions.editor.ingestSource")
+                    }
+
                     if viewModel.editingRawDescription
                         != viewModel.editingDescription.trimmingCharacters(in: .whitespacesAndNewlines)
                     {

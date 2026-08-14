@@ -9,7 +9,7 @@ struct ConnectionLifecycleTests {
     @Test("Demo link persists across fresh status reader via ConnectionEntity")
     func demoSurvivesRelaunch() async throws {
         let harness = try await makeHarness()
-        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: "demo")
+        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: "demo", deleteLocalData: true)
 
         // Simulate process relaunch: new composite/demo session, same store.
         let relaunched = try await makeHarness(
@@ -28,11 +28,11 @@ struct ConnectionLifecycleTests {
     @Test("replaceAndLink wipes prior Demo accounts before SimpleFIN sync")
     func replaceAndLinkWipesDemo() async throws {
         let harness = try await makeHarness()
-        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: "demo")
+        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: "demo", deleteLocalData: true)
         let afterDemo = try ModelContext(harness.container).fetch(FetchDescriptor<AccountEntity>())
         #expect(afterDemo.contains(where: { $0.institutionName == "Demo Bank" }))
 
-        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: makeSetupToken())
+        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: makeSetupToken(), deleteLocalData: true)
         let afterSimpleFIN = try ModelContext(harness.container).fetch(FetchDescriptor<AccountEntity>())
         #expect(afterSimpleFIN.allSatisfy { $0.institutionName != "Demo Bank" })
         #expect(afterSimpleFIN.contains(where: { $0.externalID == "sf-checking" }))
@@ -42,10 +42,39 @@ struct ConnectionLifecycleTests {
         #expect(status.isLinked)
     }
 
+    @Test("replaceAndLink with deleteLocalData false keeps CSV accounts")
+    func replaceAndLinkKeepsLocal() async throws {
+        let harness = try await makeHarness()
+        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: "demo", deleteLocalData: true)
+
+        let context = ModelContext(harness.container)
+        context.insert(
+            AccountEntity(
+                id: UUID().uuidString,
+                externalID: "csv:keep-me",
+                name: "Cash",
+                institutionName: "CSV Import",
+                currencyCode: "USD",
+                balance: 0,
+                balanceDate: .now,
+                createdByImportBatchID: "batch-1"
+            )
+        )
+        try context.save()
+
+        _ = try await harness.lifecycle.replaceAndLink(
+            withSetupToken: makeSetupToken(),
+            deleteLocalData: false
+        )
+        let after = try ModelContext(harness.container).fetch(FetchDescriptor<AccountEntity>())
+        #expect(after.contains(where: { $0.externalID == "csv:keep-me" }))
+        #expect(after.contains(where: { $0.externalID == "sf-checking" }))
+    }
+
     @Test("Disconnect keep leaves accounts; eraseEverything clears orphan state")
     func disconnectKeepThenErase() async throws {
         let harness = try await makeHarness()
-        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: "demo")
+        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: "demo", deleteLocalData: true)
         _ = try await harness.lifecycle.disconnect(deleteLocalData: false)
 
         let status = await harness.sync.connectionStatus()
@@ -109,7 +138,7 @@ struct ConnectionLifecycleTests {
     @Test("resetLocalDataKeepingLink clears rows but keeps SimpleFIN credentials")
     func resetKeepsLink() async throws {
         let harness = try await makeHarness()
-        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: makeSetupToken())
+        _ = try await harness.lifecycle.replaceAndLink(withSetupToken: makeSetupToken(), deleteLocalData: true)
         _ = try await harness.lifecycle.resetLocalDataKeepingLink()
 
         let status = await harness.sync.connectionStatus()

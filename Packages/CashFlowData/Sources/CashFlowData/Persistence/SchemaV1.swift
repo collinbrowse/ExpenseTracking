@@ -2,18 +2,19 @@ import Foundation
 import CashFlowKit
 @preconcurrency import SwiftData
 
-/// Frozen live SwiftData schema (v1).
+/// Current SwiftData schema.
 ///
 /// - Keep a **single** `VersionedSchema` listing these `@Model` types. Parallel enums that
-///   reference the same model types crash with `Duplicate version checksums detected`.
+///   reference the same model types crash with `Duplicate version checksums detected` /
+///   unknown model version during staged migration.
 /// - Prefer **additive** fields with property defaults. Breaking shape changes require
 ///   distinct V2 model types + a real `MigrationStage` — do not treat wipe as the happy path.
 /// - Incompatible / corrupt stores are wiped as a **last resort** in `ModelContainerFactory`
 ///   (clears the shared App Group store the widget also reads live).
 /// - Portable backup uses a separate JSON `formatVersion` (`LocalDataExportDocument`), not
 ///   this SwiftData version identifier.
-public enum CashFlowSchemaV1: VersionedSchema {
-    public static let versionIdentifier = Schema.Version(1, 0, 0)
+public enum CashFlowSchemaV2: VersionedSchema {
+    public static let versionIdentifier = Schema.Version(2, 0, 0)
     public static var models: [any PersistentModel.Type] {
         [
             AccountEntity.self,
@@ -22,13 +23,17 @@ public enum CashFlowSchemaV1: VersionedSchema {
             CategorizationRuleEntity.self,
             TagEntity.self,
             MerchantParseMemoEntity.self,
+            ImportBatchEntity.self,
         ]
     }
 }
 
+/// Backward-compatible alias used by older call sites / docs.
+public typealias CashFlowSchemaV1 = CashFlowSchemaV2
+
 public enum CashFlowMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [CashFlowSchemaV1.self]
+        [CashFlowSchemaV2.self]
     }
 
     public static var stages: [MigrationStage] { [] }
@@ -50,6 +55,8 @@ public final class AccountEntity {
     public var connectionExternalID: String?
     /// Last provider sync issue for this account; `nil` means healthy.
     public var syncIssue: String?
+    /// Set when this account was created by a CSV import batch.
+    public var createdByImportBatchID: String? = nil
 
     @Relationship(deleteRule: .cascade, inverse: \TransactionEntity.account)
     public var transactions: [TransactionEntity] = []
@@ -64,7 +71,8 @@ public final class AccountEntity {
         balanceDate: Date,
         userEditedName: Bool = false,
         connectionExternalID: String? = nil,
-        syncIssue: String? = nil
+        syncIssue: String? = nil,
+        createdByImportBatchID: String? = nil
     ) {
         self.id = id
         self.externalID = externalID
@@ -76,6 +84,7 @@ public final class AccountEntity {
         self.userEditedName = userEditedName
         self.connectionExternalID = connectionExternalID
         self.syncIssue = syncIssue
+        self.createdByImportBatchID = createdByImportBatchID
         self.transactions = []
     }
 }
@@ -105,6 +114,10 @@ public final class TransactionEntity {
     public var categorySourceRaw: String? = nil
     /// JSON-encoded `[TagID]` the user removed; rules must not re-add these.
     public var suppressedTagIDsData: Data? = nil
+    /// `IngestSource.rawValue` — defaults to bank link for migrated rows.
+    public var ingestSourceRaw: String = IngestSource.bankLink.rawValue
+    /// CSV import batch id when `ingestSource` is csvImport.
+    public var importBatchID: String? = nil
     /// Composite uniqueness helper: accountExternalID + transactionExternalID
     @Attribute(.unique) public var syncKey: String
 
@@ -132,7 +145,9 @@ public final class TransactionEntity {
         enrichedLocation: String? = nil,
         titleSourceRaw: String? = nil,
         categorySourceRaw: String? = nil,
-        suppressedTagIDsData: Data? = nil
+        suppressedTagIDsData: Data? = nil,
+        ingestSourceRaw: String = IngestSource.bankLink.rawValue,
+        importBatchID: String? = nil
     ) {
         self.id = id
         self.externalID = externalID
@@ -152,6 +167,8 @@ public final class TransactionEntity {
         self.titleSourceRaw = titleSourceRaw
         self.categorySourceRaw = categorySourceRaw
         self.suppressedTagIDsData = suppressedTagIDsData
+        self.ingestSourceRaw = ingestSourceRaw
+        self.importBatchID = importBatchID
         self.tags = []
     }
 }
@@ -287,5 +304,54 @@ public final class MerchantParseMemoEntity {
         self.location = location
         self.version = version
         self.createdAt = createdAt
+    }
+}
+
+/// Durable CSV import history (active + deleted tombstones).
+@Model
+public final class ImportBatchEntity {
+    @Attribute(.unique) public var id: String
+    public var fileName: String
+    public var importedAt: Date
+    public var accountID: String
+    public var accountName: String
+    public var createdAccount: Bool
+    public var createdAccountID: String?
+    public var insertedCount: Int
+    public var skippedCount: Int
+    public var replacedCount: Int
+    public var keepBothCount: Int = 0
+    /// `ImportBatchStatus.rawValue`
+    public var statusRaw: String
+    public var deletedAt: Date?
+
+    public init(
+        id: String,
+        fileName: String,
+        importedAt: Date,
+        accountID: String,
+        accountName: String,
+        createdAccount: Bool,
+        createdAccountID: String? = nil,
+        insertedCount: Int,
+        skippedCount: Int,
+        replacedCount: Int,
+        keepBothCount: Int = 0,
+        statusRaw: String = ImportBatchStatus.active.rawValue,
+        deletedAt: Date? = nil
+    ) {
+        self.id = id
+        self.fileName = fileName
+        self.importedAt = importedAt
+        self.accountID = accountID
+        self.accountName = accountName
+        self.createdAccount = createdAccount
+        self.createdAccountID = createdAccountID
+        self.insertedCount = insertedCount
+        self.skippedCount = skippedCount
+        self.replacedCount = replacedCount
+        self.keepBothCount = keepBothCount
+        self.statusRaw = statusRaw
+        self.deletedAt = deletedAt
     }
 }

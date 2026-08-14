@@ -17,10 +17,12 @@ public actor ConnectionLifecycleService: ConnectionLifecycleServing {
         self.resetter = resetter
     }
 
-    public func replaceAndLink(withSetupToken token: String) async throws -> LinkedConnection {
+    public func replaceAndLink(withSetupToken token: String, deleteLocalData: Bool) async throws -> LinkedConnection {
         await sync.cancel()
-        // Wipe first so provider switches never merge Demo + SimpleFIN rows.
-        try await resetter.resetAll()
+        if deleteLocalData {
+            // Wipe first so provider switches never unintentionally merge Demo fixtures.
+            try await resetter.resetAll()
+        }
         try? await bankLinking.unlink(removeLocalData: false)
         try await bankLinking.link(withSetupToken: token)
         return try await sync.syncNow()

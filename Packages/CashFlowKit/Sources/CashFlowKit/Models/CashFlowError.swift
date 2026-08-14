@@ -26,6 +26,8 @@ public enum CashFlowError: Error, Sendable, Equatable {
     /// On-device Foundation Models / Apple Intelligence is not usable.
     case intelligenceUnavailable
     case intelligence(message: String)
+    /// CSV import failed (empty file, missing columns, unparseable rows, etc.).
+    case csvImport(message: String)
 }
 
 extension CashFlowError: LocalizedError {
@@ -59,6 +61,8 @@ extension CashFlowError: LocalizedError {
             return "On-device intelligence isn’t available."
         case .intelligence(let message):
             return Self.nonEmpty(message, fallback: "On-device generation failed.")
+        case .csvImport(let message):
+            return Self.nonEmpty(message, fallback: "Couldn't import the CSV file.")
         }
     }
 
@@ -104,6 +108,7 @@ extension CashFlowError: LocalizedError {
         case 9: return .authenticationFailed
         case 10: return .intelligenceUnavailable
         case 11: return .intelligence(message: message)
+        case 12: return .csvImport(message: message)
         default: return nil
         }
     }
@@ -140,6 +145,7 @@ extension CashFlowError: CustomNSError {
         case .authenticationFailed: return 9
         case .intelligenceUnavailable: return 10
         case .intelligence: return 11
+        case .csvImport: return 12
         }
     }
 
@@ -152,7 +158,8 @@ extension CashFlowError: CustomNSError {
         case .transport(let message),
              .decoding(let message),
              .persistence(let message),
-             .intelligence(let message):
+             .intelligence(let message),
+             .csvImport(let message):
             let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 info[Self.messageUserInfoKey] = trimmed

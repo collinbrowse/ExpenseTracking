@@ -222,7 +222,9 @@ enum SyncMergeEngine {
                 enrichedLocation: merged.enrichedLocation,
                 titleSourceRaw: EntityMappers.titleSourceRaw(from: merged.titleSource),
                 categorySourceRaw: EntityMappers.categorySourceRaw(from: merged.categorySource),
-                suppressedTagIDsData: try EntityMappers.encodeTagIDs(merged.suppressedTagIDs)
+                suppressedTagIDsData: try EntityMappers.encodeTagIDs(merged.suppressedTagIDs),
+                ingestSourceRaw: IngestSource.bankLink.rawValue,
+                importBatchID: nil
             )
             context.insert(entity)
             try applyTags(merged.tagIDs, to: entity, context: context)

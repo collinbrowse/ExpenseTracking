@@ -107,12 +107,15 @@ final class AccountsViewModel {
         accounts = (try? await accountRepository.fetchAll()) ?? []
     }
 
-    func loadDemo() async {
+    func loadDemo(deleteLocalData: Bool = true) async {
         let op = beginWorking("Loading demo data…")
         defer { endWorking(op) }
         do {
             let token = useLargeDemoSeed ? "demo-large" : "demo"
-            connection = try await connectionLifecycle.replaceAndLink(withSetupToken: token)
+            connection = try await connectionLifecycle.replaceAndLink(
+                withSetupToken: token,
+                deleteLocalData: deleteLocalData
+            )
             guard isCurrent(op) else { return }
             completeOnboarding()
             presentStatus("Demo data loaded.")
@@ -146,15 +149,22 @@ final class AccountsViewModel {
         showLinkSheet = true
     }
 
+    /// Set before presenting the link sheet when the user already chose keep/delete.
+    var pendingLinkDeletesLocalData = true
+
     func linkSimpleFIN() async {
         let op = beginWorking("Linking SimpleFIN…")
         defer { endWorking(op) }
         do {
             workingTitle = "Linking SimpleFIN…"
-            connection = try await connectionLifecycle.replaceAndLink(withSetupToken: setupToken)
+            connection = try await connectionLifecycle.replaceAndLink(
+                withSetupToken: setupToken,
+                deleteLocalData: pendingLinkDeletesLocalData
+            )
             guard isCurrent(op) else { return }
             setupToken = ""
             showLinkSheet = false
+            pendingLinkDeletesLocalData = true
             completeOnboarding()
             presentStatus(
                 banner(afterSync: connection, successFallback: "Account linked."),

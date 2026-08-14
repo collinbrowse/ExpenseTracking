@@ -19,7 +19,7 @@ public enum ModelContainerFactory {
 
     /// Non-throwing entry point for app launch.
     public static func makeResilient(appGroupID: String? = nil) -> ModelContainer {
-        let schema = Schema(versionedSchema: CashFlowSchemaV1.self)
+        let schema = Schema(versionedSchema: CashFlowSchemaV2.self)
 
         // SwiftData traps (not throws) when `groupContainer` is set but the App Group
         // entitlement is missing — common under `CODE_SIGNING_ALLOWED=NO` / XCTest.
@@ -57,7 +57,7 @@ public enum ModelContainerFactory {
     }
 
     private static func makeInMemoryContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: CashFlowSchemaV1.self)
+        let schema = Schema(versionedSchema: CashFlowSchemaV2.self)
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         return try ModelContainer(
             for: schema,
@@ -99,7 +99,7 @@ public enum ModelContainerFactory {
     /// (that would show empty $0 instead of the app's data).
     public static func makeSharedStoreIfAvailable(appGroupID: String) -> ModelContainer? {
         guard isAppGroupAvailable(appGroupID) else { return nil }
-        let schema = Schema(versionedSchema: CashFlowSchemaV1.self)
+        let schema = Schema(versionedSchema: CashFlowSchemaV2.self)
         return attemptLoad(
             schema: schema,
             configuration: appGroupConfiguration(schema: schema, appGroupID: appGroupID)
