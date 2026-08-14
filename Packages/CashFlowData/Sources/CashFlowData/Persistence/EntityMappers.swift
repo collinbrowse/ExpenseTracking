@@ -36,7 +36,26 @@ enum EntityMappers {
             enrichedTitle: entity.enrichedTitle,
             enrichedLocation: entity.enrichedLocation,
             titleSource: titleSource(from: entity.titleSourceRaw),
-            categorySource: categorySource(from: entity.categorySourceRaw)
+            categorySource: categorySource(from: entity.categorySourceRaw),
+            ingestSource: IngestSource(rawValue: entity.ingestSourceRaw) ?? .bankLink,
+            importBatchID: entity.importBatchID.map { ImportBatchID($0) }
+        )
+    }
+
+    static func importBatch(from entity: ImportBatchEntity) -> ImportBatch {
+        ImportBatch(
+            id: ImportBatchID(entity.id),
+            fileName: entity.fileName,
+            importedAt: entity.importedAt,
+            accountID: AccountID(entity.accountID),
+            accountName: entity.accountName,
+            createdAccount: entity.createdAccount,
+            insertedCount: entity.insertedCount,
+            skippedCount: entity.skippedCount,
+            replacedCount: entity.replacedCount,
+            keepBothCount: entity.keepBothCount,
+            status: ImportBatchStatus(rawValue: entity.statusRaw) ?? .active,
+            deletedAt: entity.deletedAt
         )
     }
 

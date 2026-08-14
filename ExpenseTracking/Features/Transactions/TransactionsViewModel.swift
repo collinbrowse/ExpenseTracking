@@ -101,6 +101,12 @@ final class TransactionsViewModel {
         get { editor.editingRawDescription }
         set { editor.editingRawDescription = newValue }
     }
+    var editingIngestSourceLabel: String? {
+        switch editor.editingIngestSource {
+        case .bankLink: return nil
+        case .csvImport: return "Imported from CSV"
+        }
+    }
     var newTagName: String {
         get { editor.newTagName }
         set { editor.newTagName = newValue }

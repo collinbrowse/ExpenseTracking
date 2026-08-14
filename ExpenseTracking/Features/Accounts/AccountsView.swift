@@ -17,12 +17,12 @@ struct AccountsView: View {
                         confirmAction = .eraseEverything
                     }
                     .disabled(viewModel.isWorking)
-                    Button("Link SimpleFIN (replaces local data)…") {
-                        confirmAction = .linkReplacingData
+                    Button("Link SimpleFIN…") {
+                        confirmAction = .linkWithLocalDataChoice
                     }
                     .disabled(viewModel.isWorking)
-                    Button("Load Demo (replaces local data)") {
-                        confirmAction = .loadDemoReplacingData
+                    Button("Load Demo…") {
+                        confirmAction = .loadDemoWithLocalDataChoice
                     }
                     .disabled(viewModel.isWorking)
                 } header: {
@@ -166,23 +166,44 @@ struct AccountsView: View {
             titleVisibility: .visible
         ) {
             if let confirmAction {
-                Button(confirmAction.confirmButtonTitle, role: .destructive) {
-                    let action = confirmAction
-                    self.confirmAction = nil
-                    Task {
-                        switch action {
-                        case .disconnectKeepData:
-                            await viewModel.disconnect(removeLocalData: false)
-                        case .disconnectDeleteData:
-                            await viewModel.disconnect(removeLocalData: true)
-                        case .resetKeepingLink:
-                            await viewModel.resetLocalDataKeepingLink()
-                        case .eraseEverything:
-                            await viewModel.eraseEverything()
-                        case .linkReplacingData:
-                            viewModel.beginLinkFlow()
-                        case .loadDemoReplacingData:
-                            await viewModel.loadDemo()
+                switch confirmAction {
+                case .linkWithLocalDataChoice:
+                    Button("Keep local data") {
+                        self.confirmAction = nil
+                        viewModel.pendingLinkDeletesLocalData = false
+                        viewModel.beginLinkFlow()
+                    }
+                    Button("Delete local data", role: .destructive) {
+                        self.confirmAction = nil
+                        viewModel.pendingLinkDeletesLocalData = true
+                        viewModel.beginLinkFlow()
+                    }
+                case .loadDemoWithLocalDataChoice:
+                    Button("Keep local data") {
+                        self.confirmAction = nil
+                        Task { await viewModel.loadDemo(deleteLocalData: false) }
+                    }
+                    Button("Delete local data", role: .destructive) {
+                        self.confirmAction = nil
+                        Task { await viewModel.loadDemo(deleteLocalData: true) }
+                    }
+                default:
+                    Button(confirmAction.confirmButtonTitle, role: .destructive) {
+                        let action = confirmAction
+                        self.confirmAction = nil
+                        Task {
+                            switch action {
+                            case .disconnectKeepData:
+                                await viewModel.disconnect(removeLocalData: false)
+                            case .disconnectDeleteData:
+                                await viewModel.disconnect(removeLocalData: true)
+                            case .resetKeepingLink:
+                                await viewModel.resetLocalDataKeepingLink()
+                            case .eraseEverything:
+                                await viewModel.eraseEverything()
+                            case .linkWithLocalDataChoice, .loadDemoWithLocalDataChoice:
+                                break
+                            }
                         }
                     }
                 }
@@ -203,7 +224,6 @@ struct AccountsView: View {
             AccountRenameSheet(viewModel: viewModel)
         }
     }
-
 }
 
 private enum AccountsConfirmAction: Identifiable {
@@ -211,8 +231,8 @@ private enum AccountsConfirmAction: Identifiable {
     case disconnectDeleteData
     case resetKeepingLink
     case eraseEverything
-    case linkReplacingData
-    case loadDemoReplacingData
+    case linkWithLocalDataChoice
+    case loadDemoWithLocalDataChoice
 
     var id: Self { self }
 
@@ -226,10 +246,10 @@ private enum AccountsConfirmAction: Identifiable {
             return "Clear local data?"
         case .eraseEverything:
             return "Erase everything?"
-        case .linkReplacingData:
-            return "Replace local data?"
-        case .loadDemoReplacingData:
-            return "Replace with Demo data?"
+        case .linkWithLocalDataChoice:
+            return "Local data on this device"
+        case .loadDemoWithLocalDataChoice:
+            return "Local data on this device"
         }
     }
 
@@ -243,10 +263,10 @@ private enum AccountsConfirmAction: Identifiable {
             return "This deletes local accounts and transactions. Your \(providerName) link stays so you can Sync Now."
         case .eraseEverything:
             return "This unlinks any connection and permanently deletes all local accounts and transactions."
-        case .linkReplacingData:
-            return "Linking SimpleFIN will erase leftover local accounts first. Demo and SimpleFIN cannot share data."
-        case .loadDemoReplacingData:
-            return "Loading Demo will erase leftover local accounts first. Demo and SimpleFIN cannot share data."
+        case .linkWithLocalDataChoice:
+            return "Keep existing accounts and transactions (including CSV imports), or delete them before linking SimpleFIN. Sync will add bank accounts alongside anything you keep."
+        case .loadDemoWithLocalDataChoice:
+            return "Keep existing accounts and transactions, or delete them before loading Demo data."
         }
     }
 
@@ -256,8 +276,7 @@ private enum AccountsConfirmAction: Identifiable {
         case .disconnectDeleteData: return "Disconnect & Delete"
         case .resetKeepingLink: return "Clear Data"
         case .eraseEverything: return "Erase Everything"
-        case .linkReplacingData: return "Continue"
-        case .loadDemoReplacingData: return "Load Demo"
+        case .linkWithLocalDataChoice, .loadDemoWithLocalDataChoice: return "Continue"
         }
     }
 }
@@ -275,4 +294,3 @@ private extension AccountsView {
         }
     }
 }
-

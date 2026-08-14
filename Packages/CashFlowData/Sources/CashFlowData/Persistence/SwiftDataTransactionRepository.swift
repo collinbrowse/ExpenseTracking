@@ -431,4 +431,35 @@ public actor SwiftDataAccountRepository: AccountRepository {
         entity.userEditedName = true
         try context.save()
     }
+
+    public func create(
+        name: String,
+        institutionName: String,
+        currencyCode: String,
+        createdByImportBatchID: ImportBatchID?
+    ) async throws -> Account {
+        let context = ModelContext(modelContainer)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw CashFlowError.persistence(message: "Account name can't be empty.")
+        }
+        let id = UUID().uuidString
+        let externalID = "csv:\(id)"
+        let entity = AccountEntity(
+            id: id,
+            externalID: externalID,
+            name: trimmed,
+            institutionName: institutionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "CSV Import"
+                : institutionName.trimmingCharacters(in: .whitespacesAndNewlines),
+            currencyCode: currencyCode.isEmpty ? "USD" : currencyCode,
+            balance: 0,
+            balanceDate: .now,
+            userEditedName: true,
+            createdByImportBatchID: createdByImportBatchID?.rawValue
+        )
+        context.insert(entity)
+        try context.save()
+        return EntityMappers.account(from: entity)
+    }
 }

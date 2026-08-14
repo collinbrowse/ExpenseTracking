@@ -46,6 +46,10 @@ public actor LocalDataResetter {
             for memo in memos {
                 context.delete(memo)
             }
+            let batches = try context.fetch(FetchDescriptor<ImportBatchEntity>())
+            for batch in batches {
+                context.delete(batch)
+            }
             try context.save()
             try? snapshotStore.clear()
             widgetTimelineReloader.reloadCashFlowWidget()

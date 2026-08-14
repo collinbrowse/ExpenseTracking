@@ -24,6 +24,7 @@ final class TransactionEditorSession {
     var editingAmountText = ""
     var editingAmountIsIncome = false
     var editingRawDescription = ""
+    var editingIngestSource: IngestSource = .bankLink
     var newTagName = ""
     var matchingRules: [CategorizationRule] = []
     var showRuleEditor = false
@@ -104,6 +105,7 @@ final class TransactionEditorSession {
         editingAmountText = row.amountText
         editingAmountIsIncome = row.amountIsIncome
         editingRawDescription = row.rawDescription
+        editingIngestSource = row.ingestSource
     }
 
     private func hydrateFromStore(id: TransactionID) async {

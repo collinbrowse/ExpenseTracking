@@ -384,5 +384,21 @@ private actor StuckSkipRepository: TransactionRepository {
 private struct EmptyAccountRepository: AccountRepository {
     func fetchAll() async throws -> [Account] { [] }
     func updateName(accountID: AccountID, name: String) async throws {}
+    func create(
+        name: String,
+        institutionName: String,
+        currencyCode: String,
+        createdByImportBatchID: ImportBatchID?
+    ) async throws -> Account {
+        Account(
+            id: AccountID(UUID().uuidString),
+            externalID: "csv:stub",
+            name: name,
+            institutionName: institutionName,
+            currencyCode: currencyCode,
+            balance: 0,
+            balanceDate: .now
+        )
+    }
 }
 

@@ -149,7 +149,21 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings.exportCSV")
 
-                Text("Exports matching transactions as CSV using the same filters as the Transactions list. Bank credentials are never included.")
+                Button {
+                    viewModel.beginImportFlow()
+                } label: {
+                    Label("Import CSV…", systemImage: "square.and.arrow.down")
+                }
+                .accessibilityIdentifier("settings.importCSV")
+
+                NavigationLink {
+                    ImportHistoryView(viewModel: viewModel)
+                } label: {
+                    Label("Import History", systemImage: "clock.arrow.circlepath")
+                }
+                .accessibilityIdentifier("settings.importHistory")
+
+                Text("Export and import transactions as CSV. Bank credentials are never included. Imported rows use the same categorization pipeline as bank sync.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -157,6 +171,9 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .sheet(isPresented: $viewModel.showExportSheet) {
             ExportCSVSheet(viewModel: viewModel)
+        }
+        .sheet(isPresented: $viewModel.showImportSheet) {
+            ImportCSVSheet(viewModel: viewModel)
         }
         .sheet(isPresented: Binding(
             get: { viewModel.exportFileURL != nil },

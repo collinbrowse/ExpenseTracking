@@ -108,4 +108,12 @@ public protocol AccountRepository: Sendable {
 
     /// Persists a local display name; subsequent syncs keep it while the account still matches.
     func updateName(accountID: AccountID, name: String) async throws
+
+    /// Creates a local (CSV / manual) account. `externalID` is namespaced by the implementation.
+    func create(
+        name: String,
+        institutionName: String,
+        currencyCode: String,
+        createdByImportBatchID: ImportBatchID?
+    ) async throws -> Account
 }

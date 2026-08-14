@@ -28,6 +28,7 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
     /// Kept so edits can rebuild amount styling without a full list reload.
     let amount: Decimal
     let isPending: Bool
+    let ingestSource: IngestSource
     /// Stable month bucket for section headers, e.g. `2026-07`.
     let sectionKey: String
     let sectionTitle: String
@@ -57,6 +58,7 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
         self.postedDate = transaction.postedDate
         self.amount = transaction.amount
         self.isPending = transaction.isPending
+        self.ingestSource = transaction.ingestSource
 
         let components = calendar.dateComponents([.year, .month], from: transaction.postedDate)
         let year = components.year ?? 0
@@ -113,7 +115,8 @@ struct TransactionRowModel: Identifiable, Hashable, Sendable {
             enrichedTitle: title,
             enrichedLocation: location,
             titleSource: .user,
-            categorySource: .user
+            categorySource: .user,
+            ingestSource: ingestSource
         )
         return TransactionRowModel(
             transaction: transaction,

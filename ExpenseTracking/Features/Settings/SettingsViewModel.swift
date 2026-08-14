@@ -17,6 +17,7 @@ final class SettingsViewModel {
     let backgroundEnrichment: any BackgroundEnrichmentScheduling
     let cleanupState: any TitleCleanupStateStoring
     let localDataExport: any LocalDataExporting
+    let csvImport: any CSVImporting
     let filters: TransactionFilterSession
     let transactionRepository: any TransactionRepository
 
@@ -37,6 +38,25 @@ final class SettingsViewModel {
     var exportAccounts: [Account] = []
     var exportTags: [Tag] = []
     var exportMatchCount: Int?
+
+    // CSV import
+    var showImportSheet = false
+    var importStep: ImportCSVStep = .pickFile
+    var importFileData: Data?
+    var importFileName = "import.csv"
+    var importPreview: CSVImportPreview?
+    var importMapping = CSVColumnMapping()
+    var importAccounts: [Account] = []
+    var importAccountMode: ImportAccountMode = .createNew
+    var importSelectedAccountID: AccountID?
+    var importNewAccountName = ""
+    var importNewInstitutionName = "CSV Import"
+    var importConflicts: [CSVImportConflict] = []
+    var isImporting = false
+    var importErrorMessage: String?
+    var importBatches: [ImportBatch] = []
+    var importHistoryErrorMessage: String?
+
     /// True after a drain stops early with titles still remaining — show Resume.
     /// Mirrored to `cleanupState` so a relaunch still offers Resume.
     private(set) var isTitleCleanupPaused: Bool
@@ -44,6 +64,7 @@ final class SettingsViewModel {
     private var ownsActiveDrain = false
 
     private var progressObservation: Task<Void, Never>?
+    private let resolveConflicts = ResolveImportConflictsUseCase()
 
     private let monthFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -64,7 +85,8 @@ final class SettingsViewModel {
         syncServing: any SyncServing,
         backgroundEnrichment: any BackgroundEnrichmentScheduling,
         cleanupState: any TitleCleanupStateStoring,
-        localDataExport: any LocalDataExporting
+        localDataExport: any LocalDataExporting,
+        csvImport: any CSVImporting
     ) {
         self.filters = filters
         self.transactionRepository = transactionRepository
@@ -79,6 +101,7 @@ final class SettingsViewModel {
         self.backgroundEnrichment = backgroundEnrichment
         self.cleanupState = cleanupState
         self.localDataExport = localDataExport
+        self.csvImport = csvImport
         self.isTitleCleanupPaused = cleanupState.isPaused()
     }
 
@@ -377,6 +400,216 @@ final class SettingsViewModel {
 
     func clearExportShare() {
         exportFileURL = nil
+    }
+
+    // MARK: - CSV import
+
+    var canContinueImportAccountStep: Bool {
+        switch importAccountMode {
+        case .existing:
+            return importSelectedAccountID != nil
+        case .createNew:
+            return !importNewAccountName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    var importConflictsResolved: Bool {
+        resolveConflicts.allResolved(importConflicts)
+    }
+
+    var canConfirmImport: Bool {
+        guard !isImporting else { return false }
+        guard (importPreview?.invalidRowCount ?? 0) == 0 else { return false }
+        guard (importPreview?.validRowCount ?? 0) > 0 else { return false }
+        return importConflictsResolved
+    }
+
+    func beginImportFlow() {
+        cancelImportFlow()
+        showImportSheet = true
+        importStep = .pickFile
+    }
+
+    func cancelImportFlow() {
+        showImportSheet = false
+        importStep = .pickFile
+        importFileData = nil
+        importFileName = "import.csv"
+        importPreview = nil
+        importMapping = CSVColumnMapping()
+        importConflicts = []
+        importErrorMessage = nil
+        isImporting = false
+        importNewAccountName = ""
+        importNewInstitutionName = "CSV Import"
+        importSelectedAccountID = nil
+        importAccountMode = .createNew
+    }
+
+    func handleImportFilePicked(_ result: Result<[URL], Error>) async {
+        do {
+            let urls = try result.get()
+            guard let url = urls.first else { return }
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing { url.stopAccessingSecurityScopedResource() }
+            }
+            let data = try Data(contentsOf: url)
+            importFileData = data
+            importFileName = url.lastPathComponent
+            let preview = try await csvImport.parsePreview(
+                data: data,
+                fileName: importFileName,
+                mapping: nil
+            )
+            importPreview = preview
+            importMapping = preview.mapping
+            importAccounts = (try? await accountRepository.fetchAll()) ?? []
+            if importAccounts.isEmpty {
+                importAccountMode = .createNew
+            } else {
+                importAccountMode = .existing
+                importSelectedAccountID = importAccounts.first?.id
+            }
+            importStep = .mapping
+        } catch {
+            importErrorMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't open that CSV file."
+            )
+        }
+    }
+
+    func setImportColumn(_ column: CSVImportColumn, at index: Int) {
+        if column == .ignore {
+            importMapping.assignments.removeValue(forKey: index)
+        } else {
+            // Clear prior assignment of the same logical column (except ignore).
+            importMapping.assignments = importMapping.assignments.filter { $0.value != column }
+            importMapping.assignments[index] = column
+        }
+        importMapping.presetName = nil
+    }
+
+    func reparseImportWithCurrentMapping() async {
+        guard let data = importFileData else { return }
+        do {
+            let preview = try await csvImport.parsePreview(
+                data: data,
+                fileName: importFileName,
+                mapping: importMapping
+            )
+            importPreview = preview
+            importMapping = preview.mapping
+        } catch {
+            importErrorMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't parse CSV with that mapping."
+            )
+        }
+    }
+
+    func prepareImportConflicts() async {
+        guard importPreview != nil else { return }
+        await reparseImportWithCurrentMapping()
+        guard let preview = importPreview else { return }
+        if preview.invalidRowCount > 0 {
+            importErrorMessage = "\(preview.invalidRowCount) row(s) couldn't be parsed. Adjust column mapping first."
+            importStep = .mapping
+            return
+        }
+
+        let accountID: AccountID
+        switch importAccountMode {
+        case .existing:
+            guard let selected = importSelectedAccountID else { return }
+            accountID = selected
+        case .createNew:
+            // Conflicts only against existing account; new account has none.
+            importConflicts = []
+            importStep = .conflicts
+            return
+        }
+
+        do {
+            importConflicts = try await csvImport.findConflicts(
+                rows: preview.rows.filter(\.isValid),
+                accountID: accountID
+            )
+            importStep = .conflicts
+        } catch {
+            importErrorMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't check for duplicates."
+            )
+        }
+    }
+
+    func applyBulkConflictAction(_ action: ImportConflictAction) {
+        resolveConflicts.applyBulk(action, to: &importConflicts)
+    }
+
+    func setConflictAction(_ action: ImportConflictAction?, for id: String) {
+        resolveConflicts.setAction(action, forConflictID: id, in: &importConflicts)
+    }
+
+    func commitImport() async {
+        guard let preview = importPreview, !isImporting else { return }
+        guard canConfirmImport else {
+            if !importConflictsResolved {
+                importErrorMessage = "Choose an action for every duplicate before importing."
+            }
+            return
+        }
+        isImporting = true
+        importStep = .confirming
+        defer { isImporting = false }
+        do {
+            let accountChoice: CSVImportAccountChoice
+            switch importAccountMode {
+            case .existing:
+                guard let id = importSelectedAccountID else {
+                    throw CashFlowError.csvImport(message: "Select an account.")
+                }
+                accountChoice = .existing(id)
+            case .createNew:
+                accountChoice = .createNew(
+                    name: importNewAccountName,
+                    institutionName: importNewInstitutionName
+                )
+            }
+            let plan = CSVImportCommitPlan(
+                fileName: importFileName,
+                rows: preview.rows.filter(\.isValid),
+                conflicts: importConflicts,
+                accountChoice: accountChoice
+            )
+            _ = try await csvImport.commit(plan)
+            await reloadImportBatches()
+            cancelImportFlow()
+        } catch {
+            importStep = .conflicts
+            importErrorMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't import CSV."
+            )
+        }
+    }
+
+    func reloadImportBatches() async {
+        importBatches = (try? await csvImport.listBatches()) ?? []
+    }
+
+    func deleteImportBatch(_ id: ImportBatchID) async {
+        do {
+            _ = try await csvImport.deleteBatch(id: id)
+            await reloadImportBatches()
+        } catch {
+            importHistoryErrorMessage = CashFlowError.userFacingMessage(
+                for: error,
+                fallback: "Couldn't delete that import."
+            )
+        }
     }
 
     private func loadRuleCount() async -> Int {

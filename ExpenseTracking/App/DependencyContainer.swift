@@ -29,6 +29,7 @@ final class DependencyContainer {
     let categorizationRuleDrafting: any CategorizationRuleDrafting
     let backgroundEnrichment: any BackgroundEnrichmentScheduling
     let localDataExport: any LocalDataExporting
+    let csvImport: any CSVImporting
     let widgetTimelineReloader: any WidgetTimelineReloading
     let useLargeDemoSeed: Bool
 
@@ -171,5 +172,9 @@ final class DependencyContainer {
         )
         self.backgroundEnrichment = background
         self.localDataExport = LocalCSVExporter(modelContainer: modelContainer)
+        self.csvImport = LocalCSVImporter(
+            modelContainer: modelContainer,
+            enrichment: uiTesting ? nil : enrichment
+        )
     }
 }

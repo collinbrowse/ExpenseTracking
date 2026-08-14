@@ -52,7 +52,7 @@ Code: `CashFlowKit` (Tag + breakdown use case), `CashFlowData` (TagEntity), `Exp
 **Semantics**
 | Action | Credentials | Local accounts/txns |
 |--------|-------------|---------------------|
-| Link / Load Demo (`replaceAndLink`) | Switch to new provider | Wiped, then re-synced |
+| Link / Load Demo (`replaceAndLink`) | Switch to new provider | **Optional wipe** — UI asks Keep or Delete when local rows exist; `deleteLocalData: true` wipes first |
 | Disconnect (keep data) | Cleared | Kept |
 | Disconnect & delete | Cleared | Wiped |
 | Clear local data (keep link) | Kept | Wiped (Sync Now re-pulls) |
@@ -83,6 +83,7 @@ Code: `ExpenseTracking/Features/AppLock/`, `Features/Settings/`, `CashFlowData/S
 - Widget timelines reloaded after successful sync and on full wipe (`WidgetTimelineReloading`)
 - Launch: single `VersionedSchema`; store load failures wipe App Group/local stores and retry, then in-memory — **no `fatalError` on SwiftData migration**
 - **CSV export** (Settings → Data): filtered transaction CSV via `LocalDataExporting` using the shared `TransactionFilterSession` (same filters as the Transactions list) — no Keychain secrets
+- **CSV import** (Settings → Data): file picker → column mapping (auto-detect + presets) → account (existing or new) → fingerprint conflict resolution (skip / replace / keep both, with bulk) → commit; rows get `IngestSource.csvImport`, run through merge rules + post-import enrichment; **Import History** lists batches and can delete a batch’s transactions (tombstone kept). Linking SimpleFIN/Demo with leftover local data prompts **Keep** or **Delete** (`replaceAndLink(deleteLocalData:)`)
 
 Code: `Packages/CashFlowData/`
 
@@ -131,10 +132,10 @@ Code: `CashFlowKit` (rules + resolve), `CashFlowData` (persist + reapply + merge
 
 ## Deferred (not built)
 
-- CSV export/import, cloud backup, multi-device sync
+- Cloud backup, multi-device sync
 - JSON **import** / restore from export file
 - Plaid (or other aggregators requiring a backend)
-- Delete transaction API (forbidden for MVP)
+- Delete transaction API (forbidden for MVP; CSV **import batch** delete is the scoped exception)
 - Budgets, multi-currency, marketing screenshot pack
 - Auto-tagging *rules* (deterministic); tag date ranges or event budgets; splitting one amount across tags
 - Private Cloud Compute / server models for the assistant
